@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	_ "github.com/lib/pq"
 	"github.com/namansh70747/aura-k8s/pkg/metrics"
@@ -23,9 +24,9 @@ func NewPostgresDB(connStr string) (*PostgresDB, error) {
 	}
 
 	// Configure connection pool
-	db.SetMaxOpenConns(100)    // Maximum number of open connections
-	db.SetMaxIdleConns(25)     // Maximum number of idle connections
-	db.SetConnMaxLifetime(300) // Maximum connection lifetime (5 minutes)
+	db.SetMaxOpenConns(100)                // Maximum number of open connections
+	db.SetMaxIdleConns(25)                 // Maximum number of idle connections
+	db.SetConnMaxLifetime(5 * time.Minute) // Maximum connection lifetime (5 minutes)
 
 	if err := db.Ping(); err != nil {
 		return nil, fmt.Errorf("failed to ping database: %w", err)
@@ -131,7 +132,7 @@ func (p *PostgresDB) InitSchema(ctx context.Context) error {
 	CREATE INDEX IF NOT EXISTS idx_issues_status ON issues(status, created_at DESC);
 	CREATE INDEX IF NOT EXISTS idx_issues_type ON issues(issue_type, created_at DESC);
 
-	-- Remediations table
+	-- Remediations table (matching init-db.sql schema)
 	CREATE TABLE IF NOT EXISTS remediations (
 		id TEXT PRIMARY KEY,
 		issue_id TEXT REFERENCES issues(id),
@@ -143,13 +144,18 @@ func (p *PostgresDB) InitSchema(ctx context.Context) error {
 		success BOOLEAN NOT NULL,
 		error_message TEXT,
 		ai_recommendation TEXT,
-		time_to_resolve INTEGER
+		time_to_resolve INTEGER,
+		-- Additional fields for dashboard compatibility
+		timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+		completed_at TIMESTAMPTZ,
+		strategy TEXT
 	);
 
 	CREATE INDEX IF NOT EXISTS idx_remediations_issue ON remediations(issue_id);
 	CREATE INDEX IF NOT EXISTS idx_remediations_pod ON remediations(pod_name, namespace, executed_at DESC);
+	CREATE INDEX IF NOT EXISTS idx_remediations_timestamp ON remediations(timestamp DESC);
 
-	-- ML predictions table
+	-- ML predictions table (supporting both schemas)
 	CREATE TABLE IF NOT EXISTS ml_predictions (
 		id SERIAL,
 		pod_name TEXT NOT NULL,
@@ -169,6 +175,16 @@ func (p *PostgresDB) InitSchema(ctx context.Context) error {
 		network_error_score DOUBLE PRECISION,
 		top_features JSONB,
 		explanation TEXT,
+		-- Additional fields for view compatibility
+		resource_type TEXT DEFAULT 'pod',
+		resource_name TEXT,
+		prediction_type TEXT,
+		prediction_value DOUBLE PRECISION,
+		model_version TEXT DEFAULT 'ensemble',
+		features JSONB,
+		-- Fields required by Grafana dashboards
+		is_anomaly INTEGER DEFAULT 0,
+		anomaly_type TEXT,
 		PRIMARY KEY (timestamp, pod_name, namespace)
 	);
 
@@ -198,7 +214,27 @@ func (p *PostgresDB) InitSchema(ctx context.Context) error {
 		schedule_interval => INTERVAL '1 hour',
 		if_not_exists => TRUE);
 
-	-- Retention policy: keep raw data for 7 days
+	-- Create views for Grafana compatibility
+	CREATE OR REPLACE VIEW predictions AS 
+	SELECT 
+		timestamp,
+		timestamp as time,
+		pod_name,
+		namespace,
+		COALESCE(predicted_issue, prediction_type, 'unknown') AS anomaly_type,
+		CASE 
+			WHEN predicted_issue IS NOT NULL THEN 1
+			WHEN prediction_value > 0.5 THEN 1 
+			WHEN oom_score > 0.7 OR crash_loop_score > 0.7 OR high_cpu_score > 0.7 THEN 1
+			ELSE 0 
+		END AS is_anomaly,
+		COALESCE(confidence, 0.5) as confidence,
+		COALESCE(model_version, 'ensemble') as model_version,
+		COALESCE(features, top_features, '{}'::jsonb) AS features_used,
+		FALSE AS remediation_applied
+	FROM ml_predictions;
+
+	-- Retention policy: keep raw data for 7 days (30 days for predictions)
 	SELECT add_retention_policy('pod_metrics', INTERVAL '7 days', if_not_exists => TRUE);
 	SELECT add_retention_policy('node_metrics', INTERVAL '7 days', if_not_exists => TRUE);
 	SELECT add_retention_policy('ml_predictions', INTERVAL '30 days', if_not_exists => TRUE);
@@ -209,7 +245,79 @@ func (p *PostgresDB) InitSchema(ctx context.Context) error {
 		return fmt.Errorf("failed to initialize schema: %w", err)
 	}
 
-	utils.Log.Info("Database schema initialized successfully")
+	// Install triggers for auto-populating fields
+	triggers := `
+	CREATE OR REPLACE FUNCTION update_ml_prediction_fields()
+	RETURNS TRIGGER AS $$
+	BEGIN
+		IF NEW.anomaly_type IS NULL THEN
+			NEW.anomaly_type := COALESCE(NEW.predicted_issue, NEW.prediction_type);
+		END IF;
+		
+		IF NEW.is_anomaly IS NULL OR NEW.is_anomaly = 0 THEN
+			NEW.is_anomaly := CASE
+				WHEN NEW.predicted_issue IS NOT NULL AND NEW.predicted_issue != 'healthy' THEN 1
+				WHEN NEW.prediction_value > 0.5 THEN 1
+				WHEN NEW.oom_score > 0.7 OR NEW.crash_loop_score > 0.7 OR NEW.high_cpu_score > 0.7 THEN 1
+				WHEN NEW.disk_pressure_score > 0.7 OR NEW.network_error_score > 0.7 THEN 1
+				ELSE 0
+			END;
+		END IF;
+		
+		IF NEW.model_version IS NULL THEN
+			NEW.model_version := 'ensemble';
+		END IF;
+		
+		IF NEW.features IS NULL AND NEW.top_features IS NOT NULL THEN
+			NEW.features := NEW.top_features;
+		END IF;
+		
+		RETURN NEW;
+	END;
+	$$ LANGUAGE plpgsql;
+
+	DROP TRIGGER IF EXISTS set_ml_prediction_fields ON ml_predictions;
+	CREATE TRIGGER set_ml_prediction_fields
+		BEFORE INSERT OR UPDATE ON ml_predictions
+		FOR EACH ROW
+		EXECUTE FUNCTION update_ml_prediction_fields();
+
+	CREATE OR REPLACE FUNCTION update_remediation_strategy()
+	RETURNS TRIGGER AS $$
+	BEGIN
+		NEW.strategy := CASE
+			WHEN NEW.action LIKE '%scale_down%' OR NEW.action LIKE '%scale%' THEN 'scale_down'
+			WHEN NEW.action LIKE '%replica%' OR NEW.action LIKE '%reduce%' THEN 'reduce_replicas'
+			WHEN NEW.action LIKE '%optimize%' OR NEW.action LIKE '%rightsize%' THEN 'optimize_resources'
+			WHEN NEW.action LIKE '%restart%' THEN 'restart_pod'
+			WHEN NEW.action LIKE '%evict%' THEN 'evict_pod'
+			ELSE 'other'
+		END;
+		IF NEW.timestamp IS NULL THEN
+			NEW.timestamp := NEW.executed_at;
+		END IF;
+		IF NEW.completed_at IS NULL AND NEW.success = true AND NEW.time_to_resolve IS NOT NULL THEN
+			NEW.completed_at := NEW.executed_at + (NEW.time_to_resolve::text || ' seconds')::INTERVAL;
+		ELSIF NEW.completed_at IS NULL AND NEW.success = true THEN
+			NEW.completed_at := NEW.executed_at;
+		END IF;
+		RETURN NEW;
+	END;
+	$$ LANGUAGE plpgsql;
+
+	DROP TRIGGER IF EXISTS set_remediation_strategy ON remediations;
+	CREATE TRIGGER set_remediation_strategy
+		BEFORE INSERT OR UPDATE ON remediations
+		FOR EACH ROW
+		EXECUTE FUNCTION update_remediation_strategy();
+	`
+
+	_, err = p.db.ExecContext(ctx, triggers)
+	if err != nil {
+		return fmt.Errorf("failed to create triggers: %w", err)
+	}
+
+	utils.Log.Info("Database schema initialized successfully with triggers")
 	return nil
 }
 
@@ -394,26 +502,42 @@ func (p *PostgresDB) SaveRemediation(ctx context.Context, r *metrics.Remediation
 
 // SaveMLPrediction saves an ML prediction to the database
 func (p *PostgresDB) SaveMLPrediction(ctx context.Context, pred *metrics.MLPrediction) error {
-	topFeaturesJSON, _ := json.Marshal(pred.TopFeatures)
+	topFeaturesJSON, err := json.Marshal(pred.TopFeatures)
+	if err != nil {
+		return fmt.Errorf("failed to marshal top features: %w", err)
+	}
+
+	// Determine if anomaly and type
+	isAnomaly := 0
+	anomalyType := pred.PredictedIssue
+	predictionValue := 0.0
+	if pred.PredictedIssue != "" && pred.PredictedIssue != "healthy" {
+		isAnomaly = 1
+		predictionValue = 1.0
+	}
 
 	query := `
 	INSERT INTO ml_predictions (
 		pod_name, namespace, timestamp, predicted_issue, confidence, time_horizon_seconds,
 		xgboost_prediction, random_forest_prediction, gradient_boost_prediction, neural_net_prediction,
 		oom_score, crash_loop_score, high_cpu_score, disk_pressure_score, network_error_score,
-		top_features, explanation
-	) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+		top_features, explanation,
+		resource_type, resource_name, prediction_type, prediction_value, model_version, features,
+		is_anomaly, anomaly_type
+	) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
 	ON CONFLICT (timestamp, pod_name, namespace) DO NOTHING
 	`
 
-	_, err := p.db.ExecContext(ctx, query,
+	_, execErr := p.db.ExecContext(ctx, query,
 		pred.PodName, pred.Namespace, pred.Timestamp, pred.PredictedIssue, pred.Confidence, pred.TimeHorizonSeconds,
 		pred.XGBoostPrediction, pred.RandomForestPred, pred.GradientBoostPred, pred.NeuralNetPrediction,
 		pred.OOMScore, pred.CrashLoopScore, pred.HighCPUScore, pred.DiskPressureScore, pred.NetworkErrorScore,
 		topFeaturesJSON, pred.Explanation,
+		"pod", pred.PodName, pred.PredictedIssue, predictionValue, "ensemble", topFeaturesJSON,
+		isAnomaly, anomalyType,
 	)
 
-	return err
+	return execErr
 }
 
 // Close closes the database connection

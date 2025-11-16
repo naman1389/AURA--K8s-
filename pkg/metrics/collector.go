@@ -16,17 +16,25 @@ type Database interface {
 	SavePodMetrics(ctx context.Context, m *PodMetrics) error
 	SaveNodeMetrics(ctx context.Context, m *NodeMetrics) error
 	GetRecentPodMetrics(ctx context.Context, podName, namespace string, limit int) ([]*PodMetrics, error)
+	SaveMLPrediction(ctx context.Context, pred *MLPrediction) error
+}
+
+// MLClient interface for ML predictions
+type MLClient interface {
+	Predict(ctx context.Context, podMetrics *PodMetrics) (*MLPrediction, error)
 }
 
 type Collector struct {
 	k8sClient *k8s.Client
 	db        Database
+	mlClient  MLClient
 }
 
-func NewCollector(k8sClient *k8s.Client, db Database) *Collector {
+func NewCollector(k8sClient *k8s.Client, db Database, mlClient MLClient) *Collector {
 	return &Collector{
 		k8sClient: k8sClient,
 		db:        db,
+		mlClient:  mlClient,
 	}
 }
 
@@ -68,6 +76,16 @@ func (c *Collector) CollectPodMetrics(ctx context.Context) error {
 
 		if err := c.db.SavePodMetrics(ctx, metrics); err != nil {
 			utils.Log.WithError(err).WithField("pod", pod.Name).Warn("Failed to save metrics for pod")
+		} else if c.mlClient != nil {
+			// Get ML prediction for this pod
+			prediction, err := c.mlClient.Predict(ctx, metrics)
+			if err != nil {
+				utils.Log.WithError(err).WithField("pod", pod.Name).Debug("Failed to get ML prediction")
+			} else {
+				if err := c.db.SaveMLPrediction(ctx, prediction); err != nil {
+					utils.Log.WithError(err).WithField("pod", pod.Name).Warn("Failed to save ML prediction")
+				}
+			}
 		}
 	}
 
@@ -184,6 +202,36 @@ func (c *Collector) buildPodMetrics(ctx context.Context, pod *corev1.Pod) (*PodM
 	hasOOMKill := lastStateReason == "OOMKilled"
 	hasCrashLoop := lastStateReason == "CrashLoopBackOff"
 	hasHighCPU := cpuUtilization > 80
+	hasNetworkIssues := false
+
+	// Simulate network metrics (K8s API doesn't provide real-time network stats)
+	// In production, use cAdvisor or Prometheus
+	networkRxBytes := int64(0)
+	networkTxBytes := int64(0)
+	networkRxErrors := int64(0)
+	networkTxErrors := int64(0)
+	diskUsageBytes := int64(0)
+	diskLimitBytes := int64(10 * 1024 * 1024 * 1024) // 10GB default
+
+	// Use historical data if available to simulate network trends
+	// This is a placeholder - in real scenarios, integrate with monitoring systems
+	if cpuUtilization > 50 {
+		// Simulate proportional network traffic
+		networkRxBytes = int64(cpuUsage * 10000) // Rough estimate
+		networkTxBytes = int64(cpuUsage * 8000)
+		networkRxErrors = int64(cpuUsage / 100)
+		networkTxErrors = int64(cpuUsage / 120)
+	}
+
+	// Simulate disk usage (typically from ephemeral storage)
+	if memoryBytes > 0 {
+		diskUsageBytes = memoryBytes / 10 // Rough estimate: disk ~10% of memory
+	}
+
+	// Check for network issues (high error rate)
+	if networkRxErrors+networkTxErrors > 50 {
+		hasNetworkIssues = true
+	}
 
 	metrics := &PodMetrics{
 		PodName:       pod.Name,
@@ -200,6 +248,14 @@ func (c *Collector) buildPodMetrics(ctx context.Context, pod *corev1.Pod) (*PodM
 		CPUUtilization:    cpuUtilization,
 		MemoryUtilization: memoryUtilization,
 
+		NetworkRxBytes:  networkRxBytes,
+		NetworkTxBytes:  networkTxBytes,
+		NetworkRxErrors: networkRxErrors,
+		NetworkTxErrors: networkTxErrors,
+
+		DiskUsageBytes: diskUsageBytes,
+		DiskLimitBytes: diskLimitBytes,
+
 		Phase:    string(pod.Status.Phase),
 		Ready:    ready,
 		Restarts: restarts,
@@ -213,9 +269,10 @@ func (c *Collector) buildPodMetrics(ctx context.Context, pod *corev1.Pod) (*PodM
 		MemoryTrend:  memoryTrend,
 		RestartTrend: restartTrend,
 
-		HasOOMKill:   hasOOMKill,
-		HasCrashLoop: hasCrashLoop,
-		HasHighCPU:   hasHighCPU,
+		HasOOMKill:       hasOOMKill,
+		HasCrashLoop:     hasCrashLoop,
+		HasHighCPU:       hasHighCPU,
+		HasNetworkIssues: hasNetworkIssues,
 	}
 
 	return metrics, nil

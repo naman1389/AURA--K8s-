@@ -168,6 +168,8 @@ def generate_predictions(conn, ml_service_url: str) -> int:
                     confidence = float(prediction.get('confidence', 0.5))
 
                     # Save prediction
+                    # Note: explanation field from ML service, fallback to empty string
+                    explanation = prediction.get('explanation', prediction.get('reasoning', ''))
                     cur.execute("""
                         INSERT INTO ml_predictions (
                             pod_name, namespace, timestamp,
@@ -180,7 +182,7 @@ def generate_predictions(conn, ml_service_url: str) -> int:
                     """, (
                         pod_name, namespace, timestamp,
                         predicted_issue, confidence, 3600,
-                        json.dumps(features), prediction.get('reasoning', ''),
+                        json.dumps(list(features.keys())), explanation,
                         'pod', pod_name, predicted_issue,
                         1.0 if predicted_issue != 'healthy' else 0.0,
                         prediction.get('model_used', 'ensemble'),

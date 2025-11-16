@@ -43,9 +43,8 @@ CREATE TABLE IF NOT EXISTS pod_metrics (
     has_high_cpu BOOLEAN,
     has_network_issues BOOLEAN,
     -- Composite primary key including timestamp (required for hypertables)
-    PRIMARY KEY (timestamp, id),
-    -- Add unique constraint to prevent duplicate entries for same pod/time
-    UNIQUE(timestamp, pod_name, namespace)
+    -- Using (timestamp, pod_name, namespace) prevents duplicates for same pod at same time
+    PRIMARY KEY (timestamp, pod_name, namespace)
 );
 
 -- Convert to hypertable

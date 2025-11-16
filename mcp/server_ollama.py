@@ -5,6 +5,7 @@ Uses Ollama (free local LLM) instead of paid APIs
 
 import os
 import logging
+import asyncio
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import Optional
@@ -30,6 +31,25 @@ try:
 except Exception as e:
     logger.error(f"❌ Failed to initialize Kubernetes client: {e}")
     k8s_tools = None
+
+
+@app.on_event("startup")
+async def check_ollama_model():
+    """Ensure Ollama model is available"""
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.get(f"{OLLAMA_URL}/api/tags")
+            if response.status_code == 200:
+                models_data = response.json()
+                models_list = models_data.get("models", [])
+                model_names = [m.get("name", "") for m in models_list]
+                if not any(OLLAMA_MODEL in name for name in model_names):
+                    logger.warning(f"Model {OLLAMA_MODEL} not found. Available: {model_names}")
+                    logger.warning(f"Pull model with: docker exec aura-ollama ollama pull {OLLAMA_MODEL}")
+                else:
+                    logger.info(f"✅ Ollama model {OLLAMA_MODEL} ready")
+    except Exception as e:
+        logger.error(f"Failed to check Ollama models: {e}")
 
 
 # Request/Response Models
@@ -181,35 +201,47 @@ async def get_namespace_overview(namespace: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-async def call_ollama(prompt: str) -> str:
+async def call_ollama(prompt: str, retries: int = 2) -> str:
     """
-    Call Ollama API for LLM inference
+    Call Ollama API for LLM inference with retry logic
     """
-    try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            response = await client.post(
-                f"{OLLAMA_URL}/api/generate",
-                json={
-                    "model": OLLAMA_MODEL,
-                    "prompt": prompt,
-                    "stream": False,
-                    "temperature": 0.3,  # Lower temp for more consistent output
-                },
-            )
+    for attempt in range(retries):
+        try:
+            async with httpx.AsyncClient(timeout=60) as client:
+                response = await client.post(
+                    f"{OLLAMA_URL}/api/generate",
+                    json={
+                        "model": OLLAMA_MODEL,
+                        "prompt": prompt,
+                        "stream": False,
+                        "temperature": 0.3,  # Lower temp for more consistent output
+                    },
+                )
 
-            if response.status_code != 200:
-                logger.error(f"Ollama returned status {response.status_code}: {response.text}")
-                raise Exception(f"Ollama API error: {response.status_code}")
+                if response.status_code != 200:
+                    logger.error(f"Ollama returned status {response.status_code}: {response.text}")
+                    if attempt < retries - 1:
+                        await asyncio.sleep(2 ** attempt)  # Exponential backoff
+                        continue
+                    raise Exception(f"Ollama API error: {response.status_code}")
 
-            result = response.json()
-            return result.get("response", "")
+                result = response.json()
+                return result.get("response", "")
 
-    except httpx.ConnectError:
-        logger.error(f"Failed to connect to Ollama at {OLLAMA_URL}")
-        raise Exception(f"Cannot connect to Ollama at {OLLAMA_URL}")
-    except Exception as e:
-        logger.error(f"Error calling Ollama: {e}")
-        raise
+        except httpx.ConnectError:
+            logger.error(f"Failed to connect to Ollama at {OLLAMA_URL} (attempt {attempt + 1}/{retries})")
+            if attempt < retries - 1:
+                await asyncio.sleep(2 ** attempt)
+                continue
+            raise Exception(f"Cannot connect to Ollama at {OLLAMA_URL}")
+        except Exception as e:
+            logger.error(f"Error calling Ollama (attempt {attempt + 1}/{retries}): {e}")
+            if attempt < retries - 1:
+                await asyncio.sleep(2 ** attempt)
+                continue
+            raise
+    
+    return ""
 
 
 def parse_ollama_response(response_text: str) -> dict:

@@ -10,6 +10,7 @@ import (
 
 	"github.com/namansh70747/aura-k8s/pkg/k8s"
 	"github.com/namansh70747/aura-k8s/pkg/metrics"
+	"github.com/namansh70747/aura-k8s/pkg/ml"
 	"github.com/namansh70747/aura-k8s/pkg/storage"
 	"github.com/namansh70747/aura-k8s/pkg/utils"
 	"github.com/prometheus/client_golang/prometheus"
@@ -32,10 +33,7 @@ var (
 		Help:    "Duration of metric collection in seconds",
 		Buckets: prometheus.DefBuckets,
 	})
-	podsCollected = promauto.NewGauge(prometheus.GaugeOpts{
-		Name: "aura_collector_pods_collected",
-		Help: "Number of pods collected in last run",
-	})
+	
 )
 
 func main() {
@@ -43,6 +41,7 @@ func main() {
 
 	// Get configuration from environment
 	dbURL := getEnv("DATABASE_URL", "postgres://aura:aura_password@localhost:5432/aura_metrics?sslmode=disable")
+	mlURL := getEnv("ML_SERVICE_URL", "http://ml-service:8001")
 	interval := getEnvDuration("COLLECTION_INTERVAL", 15*time.Second)
 	metricsPort := getEnv("METRICS_PORT", "9090")
 
@@ -68,8 +67,12 @@ func main() {
 		utils.Log.WithError(err).Fatal("Failed to initialize database schema")
 	}
 
-	// Create collector
-	collector := metrics.NewCollector(k8sClient, db)
+	// Create ML client
+	mlClient := ml.NewMLClient(mlURL)
+	utils.Log.Infof("ML client initialized with URL: %s", mlURL)
+
+	// Create collector with ML integration
+	collector := metrics.NewCollector(k8sClient, db, mlClient)
 
 	// Start Prometheus metrics server
 	go func() {

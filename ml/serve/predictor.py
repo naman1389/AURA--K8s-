@@ -20,7 +20,6 @@ scaler = None
 label_encoder = None
 feature_names = []
 anomaly_types = []
-EXPECTED_FEATURES = 13  # Expected feature count
 
 class PredictionRequest(BaseModel):
     features: Dict[str, float]
@@ -30,10 +29,18 @@ class PredictionResponse(BaseModel):
     confidence: float
     probabilities: Dict[str, float]
     model_used: str
+    explanation: str = ""
 
 @app.on_event("startup")
 async def load_models():
     global models, scaler, label_encoder, feature_names, anomaly_types, EXPECTED_FEATURES
+    
+    # Validate model directory exists
+    if not MODEL_DIR.exists():
+        print(f"ERROR: Model directory {MODEL_DIR} does not exist!")
+        print("Run: python ml/train/simple_train.py to train models first")
+        print("Service will start but predictions will fail until models are trained.")
+        return
     
     with model_lock:
         print("Loading ML models...")
@@ -133,11 +140,27 @@ async def predict(request: PredictionRequest):
                 label = anomaly_types[i] if i < len(anomaly_types) else f"class_{i}"
             prob_dict[label] = float(prob)
         
+        # Generate explanation
+        explanation = f"Model ensemble detected {anomaly_type} with {confidence:.1%} confidence. "
+        if confidence > 0.8:
+            explanation += "High confidence prediction based on ensemble voting."
+        elif confidence > 0.6:
+            explanation += "Moderate confidence prediction. Monitor pod closely."
+        else:
+            explanation += "Low confidence prediction. Consider manual review."
+        
+        # Add top contributing features
+        if feature_names:
+            top_feature_idx = np.argmax(feature_vector[0])
+            if top_feature_idx < len(feature_names):
+                explanation += f" Primary indicator: {feature_names[top_feature_idx]}."
+        
         return PredictionResponse(
             anomaly_type=anomaly_type,
             confidence=confidence,
             probabilities=prob_dict,
-            model_used="ensemble"
+            model_used="ensemble",
+            explanation=explanation
         )
         
     except Exception as e:

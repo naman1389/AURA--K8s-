@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # TimescaleDB - Time-series database
   timescaledb:
@@ -68,6 +66,78 @@ services:
       timeout: 10s
       retries: 3
 
+  # Ollama Model Puller - Ensures model is available
+  ollama-pull:
+    image: curlimages/curl:latest
+    container_name: aura-ollama-pull
+    networks:
+      - aura-network
+    depends_on:
+      ollama:
+        condition: service_healthy
+    command: >
+      sh -c "
+      echo 'Pulling Ollama model llama3.2...' &&
+      curl -X POST http://ollama:11434/api/pull -d '{\"name\": \"llama3.2\"}' &&
+      echo 'Model pulled successfully!'
+      "
+    restart: "no"
+
+  # Collector - Metrics collection service (Go)
+  collector:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.collector
+    container_name: aura-collector
+    ports:
+      - "9090:9090"
+    environment:
+      - DATABASE_URL=postgresql://aura:aura_password@timescaledb:5432/aura_metrics?sslmode=disable
+      - COLLECTION_INTERVAL=15s
+      - METRICS_PORT=9090
+      - LOG_LEVEL=info
+      - KUBECONFIG=/etc/kubernetes/config
+    networks:
+      - aura-network
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider http://localhost:9090/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Remediator - Issue remediation service (Go)
+  remediator:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.remediator
+    container_name: aura-remediator
+    ports:
+      - "9091:9091"
+    environment:
+      - DATABASE_URL=postgresql://aura:aura_password@timescaledb:5432/aura_metrics?sslmode=disable
+      - MCP_SERVER_URL=http://mcp-server:8000
+      - REMEDIATION_INTERVAL=30s
+      - METRICS_PORT=9091
+      - LOG_LEVEL=info
+      - KUBECONFIG=/etc/kubernetes/config
+    networks:
+      - aura-network
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      mcp-server:
+        condition: service_started
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider http://localhost:9091/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
   # MCP Server - AI-powered remediation recommendations
   mcp-server:
     build:
@@ -78,13 +148,14 @@ services:
       - "8000:8000"
     volumes:
       - ./mcp:/app/mcp
+    working_dir: /app/mcp
     environment:
       - DATABASE_URL=postgresql://aura:aura_password@timescaledb:5432/aura_metrics
       - OLLAMA_URL=http://ollama:11434
       - OLLAMA_MODEL=llama3.2
       - MCP_PORT=8000
       - PYTHONUNBUFFERED=1
-    command: python3 server_ollama.py
+    command: uvicorn server_ollama:app --host 0.0.0.0 --port 8000
     networks:
       - aura-network
     restart: unless-stopped
@@ -93,6 +164,13 @@ services:
         condition: service_healthy
       ollama:
         condition: service_healthy
+      ollama-pull:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   # Grafana - Visualization
   grafana:
@@ -111,6 +189,7 @@ services:
       - grafana_data:/var/lib/grafana
       - ./grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
       - ./grafana/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
     depends_on:
       timescaledb:
         condition: service_healthy

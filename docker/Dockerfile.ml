@@ -18,6 +18,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy all ML code
 COPY ml/ ./ml/
 
+# Train models during build (ensures models exist)
+RUN cd /app/ml/train && python3 simple_train.py
+
 # Set Python path
 ENV PYTHONPATH=/app
 ENV MODEL_PATH=/app/ml/train/models
