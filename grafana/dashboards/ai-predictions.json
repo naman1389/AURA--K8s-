@@ -653,7 +653,7 @@
           "group": [],
           "metricColumn": "none",
           "rawQuery": true,
-          "rawSql": "SELECT\n  timestamp,\n  pod_name,\n  namespace,\n  COALESCE(anomaly_type, 'unknown') as anomaly_type,\n  confidence,\n  COALESCE(model_version, 'ensemble') as model_version,\n  COALESCE(features_used::json->>'cpu_utilization', '0') as cpu,\n  COALESCE(features_used::json->>'memory_utilization', '0') as memory\nFROM ml_predictions\nWHERE $__timeFilter(timestamp)\n  AND is_anomaly = 1\nORDER BY timestamp DESC\nLIMIT 100",
+          "rawSql": "SELECT\n  timestamp,\n  pod_name,\n  namespace,\n  COALESCE(anomaly_type, 'unknown') as anomaly_type,\n  confidence,\n  COALESCE(model_version, 'ensemble') as model_version,\n  COALESCE(features::json->>'cpu_usage', '0') as cpu,\n  COALESCE(features::json->>'memory_usage', '0') as memory\nFROM ml_predictions\nWHERE $__timeFilter(timestamp)\n  AND is_anomaly = 1\nORDER BY timestamp DESC\nLIMIT 100",
           "refId": "A",
           "select": [
             [

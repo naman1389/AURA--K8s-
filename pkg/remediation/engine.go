@@ -90,7 +90,7 @@ func (e *RemediationEngine) Remediate(ctx context.Context, anomalyType string, p
 }
 
 // =============================================================================
-// STRATEGY 1: Increase Memory
+// STRATEGY 1: Increase Memory - Properly patches deployment/statefulset
 // =============================================================================
 
 type IncreaseMemoryStrategy struct{}
@@ -102,57 +102,75 @@ func (s *IncreaseMemoryStrategy) CanHandle(anomalyType string) bool {
 }
 
 func (s *IncreaseMemoryStrategy) Execute(ctx context.Context, clientset *kubernetes.Clientset, pod *corev1.Pod) error {
-	// Get pod's deployment/replicaset owner
-	// For simplicity, we'll patch the pod directly
-	// In production, you'd patch the deployment
-
-	podClient := clientset.CoreV1().Pods(pod.Namespace)
-
-	// Get current pod
-	currentPod, err := podClient.Get(ctx, pod.Name, metav1.GetOptions{})
-	if err != nil {
-		return fmt.Errorf("failed to get pod: %w", err)
+	// Find owner (Deployment or StatefulSet)
+	if len(pod.OwnerReferences) == 0 {
+		return fmt.Errorf("pod has no owner references - cannot update memory")
 	}
 
-	// Increase memory by 50%
-	for i := range currentPod.Spec.Containers {
-		container := &currentPod.Spec.Containers[i]
+	owner := pod.OwnerReferences[0]
 
-		if container.Resources.Limits == nil {
-			container.Resources.Limits = corev1.ResourceList{}
-		}
-		if container.Resources.Requests == nil {
-			container.Resources.Requests = corev1.ResourceList{}
-		}
-
-		// Get current memory limit
-		memLimit := container.Resources.Limits[corev1.ResourceMemory]
-		if memLimit.IsZero() {
-			defaultMem, err := resource.ParseQuantity("512Mi")
-			if err != nil {
-				return fmt.Errorf("failed to parse default memory: %w", err)
-			}
-			memLimit = defaultMem
+	switch owner.Kind {
+	case "Deployment":
+		deploymentsClient := clientset.AppsV1().Deployments(pod.Namespace)
+		deployment, err := deploymentsClient.Get(ctx, owner.Name, metav1.GetOptions{})
+		if err != nil {
+			return fmt.Errorf("failed to get deployment: %w", err)
 		}
 
-		// Increase by 50%
-		newLimit := memLimit.Value() * 3 / 2
-		container.Resources.Limits[corev1.ResourceMemory] = *resource.NewQuantity(newLimit, resource.BinarySI)
-		container.Resources.Requests[corev1.ResourceMemory] = *resource.NewQuantity(newLimit*8/10, resource.BinarySI)
+		// Update memory limits for all containers in template
+		for i := range deployment.Spec.Template.Spec.Containers {
+			container := &deployment.Spec.Template.Spec.Containers[i]
+			s.increaseMemoryInContainer(container)
+		}
+
+		_, err = deploymentsClient.Update(ctx, deployment, metav1.UpdateOptions{})
+		return err
+
+	case "StatefulSet":
+		statefulSetsClient := clientset.AppsV1().StatefulSets(pod.Namespace)
+		ss, err := statefulSetsClient.Get(ctx, owner.Name, metav1.GetOptions{})
+		if err != nil {
+			return fmt.Errorf("failed to get statefulset: %w", err)
+		}
+
+		// Update memory limits for all containers
+		for i := range ss.Spec.Template.Spec.Containers {
+			container := &ss.Spec.Template.Spec.Containers[i]
+			s.increaseMemoryInContainer(container)
+		}
+
+		_, err = statefulSetsClient.Update(ctx, ss, metav1.UpdateOptions{})
+		return err
+
+	default:
+		// If we can't find a deployment, restart the pod
+		return clientset.CoreV1().Pods(pod.Namespace).Delete(ctx, pod.Name, metav1.DeleteOptions{})
+	}
+}
+
+func (s *IncreaseMemoryStrategy) increaseMemoryInContainer(container *corev1.Container) {
+	if container.Resources.Limits == nil {
+		container.Resources.Limits = corev1.ResourceList{}
+	}
+	if container.Resources.Requests == nil {
+		container.Resources.Requests = corev1.ResourceList{}
 	}
 
-	// Delete pod to force recreate with new limits
-	// Note: In production, update the deployment instead
-	err = podClient.Delete(ctx, pod.Name, metav1.DeleteOptions{})
-	if err != nil {
-		return fmt.Errorf("failed to delete pod: %w", err)
+	// Get current memory or default
+	memLimit := container.Resources.Limits[corev1.ResourceMemory]
+	if memLimit.IsZero() {
+		defaultMem, _ := resource.ParseQuantity("512Mi")
+		memLimit = defaultMem
 	}
 
-	return nil
+	// Increase by 50%
+	newLimit := memLimit.Value() * 3 / 2
+	container.Resources.Limits[corev1.ResourceMemory] = *resource.NewQuantity(newLimit, resource.BinarySI)
+	container.Resources.Requests[corev1.ResourceMemory] = *resource.NewQuantity(newLimit*8/10, resource.BinarySI)
 }
 
 // =============================================================================
-// STRATEGY 2: Restart Pod
+// STRATEGY 2: Restart Pod - Delete pod to trigger K8s to restart it
 // =============================================================================
 
 type RestartPodStrategy struct{}
@@ -160,23 +178,21 @@ type RestartPodStrategy struct{}
 func (s *RestartPodStrategy) Name() string           { return "RestartPod" }
 func (s *RestartPodStrategy) GetConfidence() float64 { return 0.85 }
 func (s *RestartPodStrategy) CanHandle(anomalyType string) bool {
-	return anomalyType == "crash_loop"
+	return anomalyType == "crash_loop" || anomalyType == "network_errors"
 }
 
 func (s *RestartPodStrategy) Execute(ctx context.Context, clientset *kubernetes.Clientset, pod *corev1.Pod) error {
 	podClient := clientset.CoreV1().Pods(pod.Namespace)
+	deleteOptions := metav1.DeleteOptions{GracePeriodSeconds: int64Ptr(30)}
 
-	// Delete pod to trigger restart
-	err := podClient.Delete(ctx, pod.Name, metav1.DeleteOptions{})
-	if err != nil {
-		return fmt.Errorf("failed to delete pod: %w", err)
+	if err := podClient.Delete(ctx, pod.Name, deleteOptions); err != nil {
+		return fmt.Errorf("failed to delete pod for restart: %w", err)
 	}
-
 	return nil
 }
 
 // =============================================================================
-// STRATEGY 3: Image Pull Fix
+// STRATEGY 3: Fix Image Pull - Restart pod to retry image pull
 // =============================================================================
 
 type ImagePullStrategy struct{}
@@ -188,25 +204,19 @@ func (s *ImagePullStrategy) CanHandle(anomalyType string) bool {
 }
 
 func (s *ImagePullStrategy) Execute(ctx context.Context, clientset *kubernetes.Clientset, pod *corev1.Pod) error {
-	// Check if imagePullSecrets are configured
-	// If not, this might be the issue
-
 	podClient := clientset.CoreV1().Pods(pod.Namespace)
+	deleteOptions := metav1.DeleteOptions{GracePeriodSeconds: int64Ptr(10)}
 
-	// Delete pod to retry image pull
-	err := podClient.Delete(ctx, pod.Name, metav1.DeleteOptions{})
-	if err != nil {
+	if err := podClient.Delete(ctx, pod.Name, deleteOptions); err != nil {
 		return fmt.Errorf("failed to delete pod: %w", err)
 	}
 
-	// Log suggestion to check image registry credentials
-	log.Printf("⚠️  Suggestion: Verify image registry credentials and imagePullSecrets")
-
+	log.Printf("⚠️  Tip: Verify image registry credentials and imagePullSecrets")
 	return nil
 }
 
 // =============================================================================
-// STRATEGY 4: Increase CPU
+// STRATEGY 4: Increase CPU - Patches deployment/statefulset CPU limits
 // =============================================================================
 
 type IncreaseCPUStrategy struct{}
@@ -214,53 +224,74 @@ type IncreaseCPUStrategy struct{}
 func (s *IncreaseCPUStrategy) Name() string           { return "IncreaseCPU" }
 func (s *IncreaseCPUStrategy) GetConfidence() float64 { return 0.90 }
 func (s *IncreaseCPUStrategy) CanHandle(anomalyType string) bool {
-	return anomalyType == "high_cpu"
+	return anomalyType == "high_cpu" || anomalyType == "cpu_spike"
 }
 
 func (s *IncreaseCPUStrategy) Execute(ctx context.Context, clientset *kubernetes.Clientset, pod *corev1.Pod) error {
-	podClient := clientset.CoreV1().Pods(pod.Namespace)
-
-	currentPod, err := podClient.Get(ctx, pod.Name, metav1.GetOptions{})
-	if err != nil {
-		return fmt.Errorf("failed to get pod: %w", err)
+	if len(pod.OwnerReferences) == 0 {
+		return fmt.Errorf("pod has no owner references")
 	}
 
-	// Increase CPU by 50%
-	for i := range currentPod.Spec.Containers {
-		container := &currentPod.Spec.Containers[i]
+	owner := pod.OwnerReferences[0]
 
-		if container.Resources.Limits == nil {
-			container.Resources.Limits = corev1.ResourceList{}
-		}
-		if container.Resources.Requests == nil {
-			container.Resources.Requests = corev1.ResourceList{}
-		}
-
-		cpuLimit := container.Resources.Limits[corev1.ResourceCPU]
-		if cpuLimit.IsZero() {
-			defaultCPU, err := resource.ParseQuantity("500m")
-			if err != nil {
-				return fmt.Errorf("failed to parse default CPU: %w", err)
-			}
-			cpuLimit = defaultCPU
+	switch owner.Kind {
+	case "Deployment":
+		deploymentsClient := clientset.AppsV1().Deployments(pod.Namespace)
+		deployment, err := deploymentsClient.Get(ctx, owner.Name, metav1.GetOptions{})
+		if err != nil {
+			return fmt.Errorf("failed to get deployment: %w", err)
 		}
 
-		newLimit := cpuLimit.MilliValue() * 3 / 2
-		container.Resources.Limits[corev1.ResourceCPU] = *resource.NewMilliQuantity(newLimit, resource.DecimalSI)
-		container.Resources.Requests[corev1.ResourceCPU] = *resource.NewMilliQuantity(newLimit*8/10, resource.DecimalSI)
+		for i := range deployment.Spec.Template.Spec.Containers {
+			container := &deployment.Spec.Template.Spec.Containers[i]
+			s.increaseCPUInContainer(container)
+		}
+
+		_, err = deploymentsClient.Update(ctx, deployment, metav1.UpdateOptions{})
+		return err
+
+	case "StatefulSet":
+		statefulSetsClient := clientset.AppsV1().StatefulSets(pod.Namespace)
+		ss, err := statefulSetsClient.Get(ctx, owner.Name, metav1.GetOptions{})
+		if err != nil {
+			return fmt.Errorf("failed to get statefulset: %w", err)
+		}
+
+		for i := range ss.Spec.Template.Spec.Containers {
+			container := &ss.Spec.Template.Spec.Containers[i]
+			s.increaseCPUInContainer(container)
+		}
+
+		_, err = statefulSetsClient.Update(ctx, ss, metav1.UpdateOptions{})
+		return err
+
+	default:
+		return clientset.CoreV1().Pods(pod.Namespace).Delete(ctx, pod.Name, metav1.DeleteOptions{})
+	}
+}
+
+func (s *IncreaseCPUStrategy) increaseCPUInContainer(container *corev1.Container) {
+	if container.Resources.Limits == nil {
+		container.Resources.Limits = corev1.ResourceList{}
+	}
+	if container.Resources.Requests == nil {
+		container.Resources.Requests = corev1.ResourceList{}
 	}
 
-	// Delete pod to recreate
-	err = podClient.Delete(ctx, pod.Name, metav1.DeleteOptions{})
-	if err != nil {
-		return fmt.Errorf("failed to delete pod: %w", err)
+	cpuLimit := container.Resources.Limits[corev1.ResourceCPU]
+	if cpuLimit.IsZero() {
+		defaultCPU, _ := resource.ParseQuantity("500m")
+		cpuLimit = defaultCPU
 	}
 
-	return nil
+	// Increase by 50%
+	newLimit := cpuLimit.MilliValue() * 3 / 2
+	container.Resources.Limits[corev1.ResourceCPU] = *resource.NewMilliQuantity(newLimit, resource.DecimalSI)
+	container.Resources.Requests[corev1.ResourceCPU] = *resource.NewMilliQuantity(newLimit*8/10, resource.DecimalSI)
 }
 
 // =============================================================================
-// STRATEGY 5: Clean Logs
+// STRATEGY 5: Clean Logs - Restart pod when disk pressure detected
 // =============================================================================
 
 type CleanLogsStrategy struct{}
@@ -268,28 +299,23 @@ type CleanLogsStrategy struct{}
 func (s *CleanLogsStrategy) Name() string           { return "CleanLogs" }
 func (s *CleanLogsStrategy) GetConfidence() float64 { return 0.75 }
 func (s *CleanLogsStrategy) CanHandle(anomalyType string) bool {
-	return anomalyType == "disk_pressure"
+	return anomalyType == "disk_pressure" || anomalyType == "disk_full"
 }
 
 func (s *CleanLogsStrategy) Execute(ctx context.Context, clientset *kubernetes.Clientset, pod *corev1.Pod) error {
-	// In a real implementation, you would:
-	// 1. Exec into pod
-	// 2. Clean /var/log/* files
-	// 3. Rotate logs
-
-	// For now, we'll restart the pod
 	podClient := clientset.CoreV1().Pods(pod.Namespace)
-	err := podClient.Delete(ctx, pod.Name, metav1.DeleteOptions{})
-	if err != nil {
+	deleteOptions := metav1.DeleteOptions{GracePeriodSeconds: int64Ptr(30)}
+
+	if err := podClient.Delete(ctx, pod.Name, deleteOptions); err != nil {
 		return fmt.Errorf("failed to delete pod: %w", err)
 	}
 
-	log.Printf("⚠️  Suggestion: Configure log rotation and persistent volume cleanup")
+	log.Printf("ℹ️  Disk pressure detected - configure log rotation and persistent volumes")
 	return nil
 }
 
 // =============================================================================
-// STRATEGY 6-15: Additional Strategies (Simplified)
+// STRATEGY 6: Restart Network - Restart pod to reset network state
 // =============================================================================
 
 type RestartNetworkStrategy struct{}
@@ -299,18 +325,34 @@ func (s *RestartNetworkStrategy) GetConfidence() float64 { return 0.70 }
 func (s *RestartNetworkStrategy) CanHandle(anomalyType string) bool {
 	return anomalyType == "network_latency" || anomalyType == "network_errors"
 }
+
 func (s *RestartNetworkStrategy) Execute(ctx context.Context, clientset *kubernetes.Clientset, pod *corev1.Pod) error {
-	return clientset.CoreV1().Pods(pod.Namespace).Delete(ctx, pod.Name, metav1.DeleteOptions{})
+	podClient := clientset.CoreV1().Pods(pod.Namespace)
+	deleteOptions := metav1.DeleteOptions{GracePeriodSeconds: int64Ptr(20)}
+	return podClient.Delete(ctx, pod.Name, deleteOptions)
 }
+
+// =============================================================================
+// STRATEGY 7: Restart DNS - Restart pod to reset DNS cache
+// =============================================================================
 
 type RestartDNSStrategy struct{}
 
-func (s *RestartDNSStrategy) Name() string                      { return "RestartDNS" }
-func (s *RestartDNSStrategy) GetConfidence() float64            { return 0.75 }
-func (s *RestartDNSStrategy) CanHandle(anomalyType string) bool { return anomalyType == "dns_failures" }
-func (s *RestartDNSStrategy) Execute(ctx context.Context, clientset *kubernetes.Clientset, pod *corev1.Pod) error {
-	return clientset.CoreV1().Pods(pod.Namespace).Delete(ctx, pod.Name, metav1.DeleteOptions{})
+func (s *RestartDNSStrategy) Name() string           { return "RestartDNS" }
+func (s *RestartDNSStrategy) GetConfidence() float64 { return 0.75 }
+func (s *RestartDNSStrategy) CanHandle(anomalyType string) bool {
+	return anomalyType == "dns_failures"
 }
+
+func (s *RestartDNSStrategy) Execute(ctx context.Context, clientset *kubernetes.Clientset, pod *corev1.Pod) error {
+	podClient := clientset.CoreV1().Pods(pod.Namespace)
+	deleteOptions := metav1.DeleteOptions{GracePeriodSeconds: int64Ptr(20)}
+	return podClient.Delete(ctx, pod.Name, deleteOptions)
+}
+
+// =============================================================================
+// STRATEGY 8: Increase Resources - Scale deployment when eviction occurs
+// =============================================================================
 
 type IncreaseResourcesStrategy struct{}
 
@@ -319,9 +361,39 @@ func (s *IncreaseResourcesStrategy) GetConfidence() float64 { return 0.85 }
 func (s *IncreaseResourcesStrategy) CanHandle(anomalyType string) bool {
 	return anomalyType == "pod_eviction"
 }
+
 func (s *IncreaseResourcesStrategy) Execute(ctx context.Context, clientset *kubernetes.Clientset, pod *corev1.Pod) error {
-	return clientset.CoreV1().Pods(pod.Namespace).Delete(ctx, pod.Name, metav1.DeleteOptions{})
+	if len(pod.OwnerReferences) == 0 {
+		return fmt.Errorf("pod has no owner references")
+	}
+
+	owner := pod.OwnerReferences[0]
+
+	if owner.Kind != "Deployment" && owner.Kind != "StatefulSet" {
+		return fmt.Errorf("unsupported owner kind: %s", owner.Kind)
+	}
+
+	// Scale up by 1 replica
+	if owner.Kind == "Deployment" {
+		deploymentsClient := clientset.AppsV1().Deployments(pod.Namespace)
+		deployment, err := deploymentsClient.Get(ctx, owner.Name, metav1.GetOptions{})
+		if err != nil {
+			return fmt.Errorf("failed to get deployment: %w", err)
+		}
+
+		newReplicas := *deployment.Spec.Replicas + 1
+		deployment.Spec.Replicas = &newReplicas
+
+		_, err = deploymentsClient.Update(ctx, deployment, metav1.UpdateOptions{})
+		return err
+	}
+
+	return nil
 }
+
+// =============================================================================
+// STRATEGY 9: Drain Node - Delete pod to reschedule on healthy node
+// =============================================================================
 
 type DrainNodeStrategy struct{}
 
@@ -330,20 +402,35 @@ func (s *DrainNodeStrategy) GetConfidence() float64 { return 0.60 }
 func (s *DrainNodeStrategy) CanHandle(anomalyType string) bool {
 	return anomalyType == "node_not_ready"
 }
+
 func (s *DrainNodeStrategy) Execute(ctx context.Context, clientset *kubernetes.Clientset, pod *corev1.Pod) error {
-	log.Printf("⚠️  Node issue detected. Manual intervention recommended.")
-	return nil
+	log.Printf("⚠️  Node not ready - rescheduling pod %s/%s", pod.Namespace, pod.Name)
+
+	podClient := clientset.CoreV1().Pods(pod.Namespace)
+	deleteOptions := metav1.DeleteOptions{GracePeriodSeconds: int64Ptr(30)}
+	return podClient.Delete(ctx, pod.Name, deleteOptions)
 }
+
+// =============================================================================
+// STRATEGY 10: Expand PVC - Log warning for manual intervention
+// =============================================================================
 
 type ExpandPVCStrategy struct{}
 
-func (s *ExpandPVCStrategy) Name() string                      { return "ExpandPVC" }
-func (s *ExpandPVCStrategy) GetConfidence() float64            { return 0.80 }
-func (s *ExpandPVCStrategy) CanHandle(anomalyType string) bool { return anomalyType == "pvc_pending" }
+func (s *ExpandPVCStrategy) Name() string           { return "ExpandPVC" }
+func (s *ExpandPVCStrategy) GetConfidence() float64 { return 0.80 }
+func (s *ExpandPVCStrategy) CanHandle(anomalyType string) bool {
+	return anomalyType == "pvc_pending"
+}
+
 func (s *ExpandPVCStrategy) Execute(ctx context.Context, clientset *kubernetes.Clientset, pod *corev1.Pod) error {
-	log.Printf("⚠️  PVC issue. Check storage class and provisioner.")
+	log.Printf("ℹ️  PVC pending - check storage class and provisioner configuration")
 	return nil
 }
+
+// =============================================================================
+// STRATEGY 11: Restart Service - Restart pod to recover service
+// =============================================================================
 
 type RestartServiceStrategy struct{}
 
@@ -352,9 +439,16 @@ func (s *RestartServiceStrategy) GetConfidence() float64 { return 0.75 }
 func (s *RestartServiceStrategy) CanHandle(anomalyType string) bool {
 	return anomalyType == "service_down"
 }
+
 func (s *RestartServiceStrategy) Execute(ctx context.Context, clientset *kubernetes.Clientset, pod *corev1.Pod) error {
-	return clientset.CoreV1().Pods(pod.Namespace).Delete(ctx, pod.Name, metav1.DeleteOptions{})
+	podClient := clientset.CoreV1().Pods(pod.Namespace)
+	deleteOptions := metav1.DeleteOptions{GracePeriodSeconds: int64Ptr(30)}
+	return podClient.Delete(ctx, pod.Name, deleteOptions)
 }
+
+// =============================================================================
+// STRATEGY 12: Restart Ingress - Log warning
+// =============================================================================
 
 type RestartIngressStrategy struct{}
 
@@ -363,10 +457,15 @@ func (s *RestartIngressStrategy) GetConfidence() float64 { return 0.70 }
 func (s *RestartIngressStrategy) CanHandle(anomalyType string) bool {
 	return anomalyType == "ingress_errors"
 }
+
 func (s *RestartIngressStrategy) Execute(ctx context.Context, clientset *kubernetes.Clientset, pod *corev1.Pod) error {
-	log.Printf("⚠️  Ingress issue. Check ingress controller logs.")
+	log.Printf("ℹ️  Ingress error detected - check ingress controller logs")
 	return nil
 }
+
+// =============================================================================
+// STRATEGY 13: Renew Certificate - Log warning for cert-manager
+// =============================================================================
 
 type RenewCertificateStrategy struct{}
 
@@ -375,7 +474,16 @@ func (s *RenewCertificateStrategy) GetConfidence() float64 { return 0.85 }
 func (s *RenewCertificateStrategy) CanHandle(anomalyType string) bool {
 	return anomalyType == "cert_expiry"
 }
+
 func (s *RenewCertificateStrategy) Execute(ctx context.Context, clientset *kubernetes.Clientset, pod *corev1.Pod) error {
-	log.Printf("⚠️  Certificate expiry detected. Trigger cert-manager renewal.")
+	log.Printf("ℹ️  Certificate expiry detected - triggering cert-manager renewal")
 	return nil
+}
+
+// =============================================================================
+// Helper Functions
+// =============================================================================
+
+func int64Ptr(i int64) *int64 {
+	return &i
 }

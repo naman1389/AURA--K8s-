@@ -12,8 +12,8 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent))
 
 from validate_system import main as validate
-from remediation_service import main as remediate
 from generate_test_data import generate_and_store_data as generate_data
+# Note: remediation_service removed - remediator is now a Go service in cmd/remediator
 
 
 def show_menu():
@@ -28,10 +28,12 @@ def show_menu():
 Available Commands:
 
   1. validate   - Run complete system validation
-  2. remediate  - Run remediation service (continuous)
-  3. generate   - Generate test data
-  4. status     - Quick system status check
-  5. help       - Show this help message
+  2. generate   - Generate test data
+  3. status     - Quick system status check
+  4. help       - Show this help message
+
+Note: Remediation is now handled by the Go remediator service
+      (cmd/remediator/main.go) - start with docker-compose
 
 Usage:
   python aura.py <command>
@@ -97,7 +99,7 @@ Examples:
     parser.add_argument(
         'command',
         nargs='?',
-        choices=['validate', 'remediate', 'generate', 'status', 'help'],
+        choices=['validate', 'generate', 'status', 'help'],
         help='Command to execute'
     )
     
@@ -110,9 +112,6 @@ Examples:
     try:
         if args.command == 'validate':
             return validate()
-        elif args.command == 'remediate':
-            remediate()
-            return 0
         elif args.command == 'generate':
             generate_data()
             return 0

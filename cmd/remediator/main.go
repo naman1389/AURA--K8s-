@@ -110,8 +110,8 @@ func main() {
 
 		case <-stop:
 			utils.Log.Info("Shutting down remediator gracefully...")
-			cancel()   // Cancel context to stop ongoing operations
-			db.Close() // Explicitly close database connection
+			cancel()
+			db.Close()
 			utils.Log.Info("Remediator stopped")
 			return
 		}
@@ -231,26 +231,43 @@ func getFallbackRecommendation(issue *metrics.Issue) *AIRecommendation {
 		Reasoning:  "Fallback recommendation based on issue type",
 	}
 
+	// Map issue types to remediation actions
 	switch issue.IssueType {
-	case "OOMKilled":
+	case "OOMKilled", "oom_killed", "high_memory":
 		rec.Action = "increase_memory"
-		rec.ActionDetails = "Increase memory limit by 50%"
+		rec.ActionDetails = "Increase memory limit by 50% for the pod"
 
-	case "CrashLoopBackOff":
+	case "CrashLoopBackOff", "crash_loop":
 		rec.Action = "restart_pod"
 		rec.ActionDetails = "Restart pod to recover from crash loop"
 
-	case "HighCPU":
+	case "HighCPU", "high_cpu", "cpu_spike":
 		rec.Action = "scale_deployment"
-		rec.ActionDetails = "Scale deployment to handle CPU load"
+		rec.ActionDetails = "Scale deployment horizontally to handle CPU load"
 
-	case "DiskPressure":
+	case "DiskPressure", "disk_pressure", "disk_full":
 		rec.Action = "clean_logs"
 		rec.ActionDetails = "Clean up logs and temporary files"
 
-	case "NetworkErrors":
+	case "NetworkErrors", "network_errors", "network_latency":
 		rec.Action = "restart_pod"
 		rec.ActionDetails = "Restart pod to reset network state"
+
+	case "ImagePullBackOff", "image_pull_backoff":
+		rec.Action = "restart_pod"
+		rec.ActionDetails = "Retry image pull by restarting pod"
+
+	case "DNSFailures", "dns_failures":
+		rec.Action = "restart_pod"
+		rec.ActionDetails = "Restart pod to reset DNS cache"
+
+	case "PVCPending", "pvc_pending":
+		rec.Action = "expand_pvc"
+		rec.ActionDetails = "Expand PersistentVolumeClaim or check storage"
+
+	case "NodeNotReady", "node_not_ready":
+		rec.Action = "drain_node"
+		rec.ActionDetails = "Pod will be rescheduled to healthy node"
 
 	default:
 		rec.Action = "restart_pod"
@@ -267,38 +284,75 @@ func executeRemediation(ctx context.Context, k8sClient *k8s.Client, issue *metri
 	case "restart_pod":
 		err := k8sClient.RestartPod(ctx, issue.Namespace, issue.PodName)
 		if err != nil {
-			return false, err.Error()
+			return false, fmt.Sprintf("failed to restart pod: %v", err)
 		}
 		return true, ""
 
 	case "increase_memory":
-		err := k8sClient.UpdatePodResourceLimits(ctx, issue.Namespace, issue.PodName, "deployment", "", "4Gi")
+		pod, err := k8sClient.GetPod(ctx, issue.Namespace, issue.PodName)
 		if err != nil {
-			return false, err.Error()
+			return false, fmt.Sprintf("failed to get pod: %v", err)
+		}
+		if len(pod.Spec.Containers) == 0 {
+			return false, "pod has no containers"
+		}
+		containerName := pod.Spec.Containers[0].Name
+		err = k8sClient.UpdatePodResourceLimits(ctx, issue.Namespace, issue.PodName, containerName, "", "4Gi")
+		if err != nil {
+			return false, fmt.Sprintf("failed to update memory: %v", err)
 		}
 		return true, ""
 
 	case "increase_cpu":
-		err := k8sClient.UpdatePodResourceLimits(ctx, issue.Namespace, issue.PodName, "deployment", "2000m", "")
+		pod, err := k8sClient.GetPod(ctx, issue.Namespace, issue.PodName)
 		if err != nil {
-			return false, err.Error()
+			return false, fmt.Sprintf("failed to get pod: %v", err)
+		}
+		if len(pod.Spec.Containers) == 0 {
+			return false, "pod has no containers"
+		}
+		containerName := pod.Spec.Containers[0].Name
+		err = k8sClient.UpdatePodResourceLimits(ctx, issue.Namespace, issue.PodName, containerName, "2000m", "")
+		if err != nil {
+			return false, fmt.Sprintf("failed to update cpu: %v", err)
 		}
 		return true, ""
 
 	case "scale_deployment":
 		deployment, err := k8sClient.GetDeploymentForPod(ctx, issue.Namespace, issue.PodName)
 		if err != nil {
-			return false, err.Error()
+			return false, fmt.Sprintf("failed to get deployment: %v", err)
 		}
 		newReplicas := *deployment.Spec.Replicas + 1
 		err = k8sClient.ScaleDeployment(ctx, issue.Namespace, deployment.Name, newReplicas)
 		if err != nil {
-			return false, err.Error()
+			return false, fmt.Sprintf("failed to scale deployment: %v", err)
+		}
+		return true, ""
+
+	case "clean_logs":
+		// Delete pod to trigger cleanup and restart
+		err := k8sClient.RestartPod(ctx, issue.Namespace, issue.PodName)
+		if err != nil {
+			return false, fmt.Sprintf("failed to clean logs: %v", err)
+		}
+		return true, ""
+
+	case "expand_pvc":
+		// Log that manual intervention is needed
+		utils.Log.WithField("pod", issue.PodName).Warn("PVC expansion needed - requires manual intervention")
+		return false, "PVC expansion requires manual intervention"
+
+	case "drain_node":
+		// Delete pod so it reschedules on healthy node
+		err := k8sClient.RestartPod(ctx, issue.Namespace, issue.PodName)
+		if err != nil {
+			return false, fmt.Sprintf("failed to reschedule pod: %v", err)
 		}
 		return true, ""
 
 	default:
-		return false, "Unknown action: " + rec.Action
+		return false, fmt.Sprintf("unknown action: %s", rec.Action)
 	}
 }
 

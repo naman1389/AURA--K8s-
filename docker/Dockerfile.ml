@@ -8,6 +8,7 @@ RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
     make \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Install dependencies for ML
@@ -19,6 +20,10 @@ COPY ml/ ./ml/
 
 # Set Python path
 ENV PYTHONPATH=/app
+ENV MODEL_PATH=/app/ml/train/models
+ENV PORT=8001
 
-# Default command for testing
-CMD ["python3", "ml/test_ml_models.py"]
+EXPOSE 8001
+
+# Run the ML prediction service
+CMD ["python3", "-m", "ml.serve.predictor"]

@@ -149,8 +149,11 @@ CREATE TABLE IF NOT EXISTS ml_predictions (
     resource_name TEXT,
     prediction_type TEXT,
     prediction_value DOUBLE PRECISION,
-    model_version TEXT,
+    model_version TEXT DEFAULT 'ensemble',
     features JSONB,
+    -- Fields required by Grafana dashboards
+    is_anomaly INTEGER DEFAULT 0,
+    anomaly_type TEXT,
     PRIMARY KEY (timestamp, pod_name, namespace)
 );
 
@@ -261,6 +264,45 @@ CREATE TRIGGER set_remediation_strategy
     BEFORE INSERT OR UPDATE ON remediations
     FOR EACH ROW
     EXECUTE FUNCTION update_remediation_strategy();
+
+-- Update ml_predictions table to auto-populate is_anomaly and anomaly_type
+CREATE OR REPLACE FUNCTION update_ml_prediction_fields()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Populate anomaly_type from predicted_issue if not set
+    IF NEW.anomaly_type IS NULL THEN
+        NEW.anomaly_type := COALESCE(NEW.predicted_issue, NEW.prediction_type);
+    END IF;
+    
+    -- Set is_anomaly based on various criteria
+    IF NEW.is_anomaly IS NULL OR NEW.is_anomaly = 0 THEN
+        NEW.is_anomaly := CASE
+            WHEN NEW.predicted_issue IS NOT NULL THEN 1
+            WHEN NEW.prediction_value > 0.5 THEN 1
+            WHEN NEW.oom_score > 0.7 OR NEW.crash_loop_score > 0.7 OR NEW.high_cpu_score > 0.7 THEN 1
+            WHEN NEW.disk_pressure_score > 0.7 OR NEW.network_error_score > 0.7 THEN 1
+            ELSE 0
+        END;
+    END IF;
+    
+    -- Ensure model_version is set
+    IF NEW.model_version IS NULL THEN
+        NEW.model_version := 'ensemble';
+    END IF;
+    
+    -- Merge top_features into features if features is NULL
+    IF NEW.features IS NULL AND NEW.top_features IS NOT NULL THEN
+        NEW.features := NEW.top_features;
+    END IF;
+    
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER set_ml_prediction_fields
+    BEFORE INSERT OR UPDATE ON ml_predictions
+    FOR EACH ROW
+    EXECUTE FUNCTION update_ml_prediction_fields();
 
 -- Display initialization success
 SELECT 'Database initialized successfully!' AS status;

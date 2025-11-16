@@ -143,7 +143,7 @@
           "group": [],
           "metricColumn": "none",
           "rawQuery": true,
-          "rawSql": "SELECT\n  time_bucket('1 day', timestamp) as time,\n  SUM(\n    CASE\n      WHEN success = true AND strategy IN ('scale_down', 'reduce_replicas', 'optimize_resources')\n      THEN 50.0\n      ELSE 0\n    END\n  ) as total_savings\nFROM remediations\nWHERE $__timeFilter(timestamp)\nGROUP BY time\nORDER BY time",
+          "rawSql": "SELECT\n  time_bucket('1 day', executed_at) as time,\n  SUM(\n    CASE\n      WHEN success = true AND strategy IN ('scale_down', 'reduce_replicas', 'optimize_resources')\n      THEN 50.0\n      ELSE 0\n    END\n  ) as total_savings\nFROM remediations\nWHERE $__timeFilter(executed_at)\nGROUP BY time\nORDER BY time",
           "refId": "A",
           "select": [
             [
@@ -299,7 +299,7 @@
           "group": [],
           "metricColumn": "none",
           "rawQuery": true,
-          "rawSql": "SELECT\n  time_bucket('1 hour', timestamp) as time,\n  COUNT(*) as optimization_count\nFROM remediations\nWHERE $__timeFilter(timestamp)\n  AND strategy IN ('scale_down', 'reduce_replicas', 'optimize_resources', 'rightsizing')\n  AND success = true\nGROUP BY time\nORDER BY time",
+          "rawSql": "SELECT\n  time_bucket('1 hour', executed_at) as time,\n  COUNT(*) as optimization_count\nFROM remediations\nWHERE $__timeFilter(executed_at)\n  AND strategy IN ('scale_down', 'reduce_replicas', 'optimize_resources', 'rightsizing')\n  AND success = true\nGROUP BY time\nORDER BY time",
           "refId": "A",
           "select": [
             [

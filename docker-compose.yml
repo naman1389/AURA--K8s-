@@ -80,10 +80,11 @@ services:
       - ./mcp:/app/mcp
     environment:
       - DATABASE_URL=postgresql://aura:aura_password@timescaledb:5432/aura_metrics
-      - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_URL=http://ollama:11434
+      - OLLAMA_MODEL=llama3.2
       - MCP_PORT=8000
       - PYTHONUNBUFFERED=1
-    command: python3 -m mcp.server
+    command: python3 server_ollama.py
     networks:
       - aura-network
     restart: unless-stopped

@@ -368,7 +368,7 @@
           "group": [],
           "metricColumn": "none",
           "rawQuery": true,
-          "rawSql": "SELECT\n  timestamp,\n  pod_name,\n  namespace,\n  COALESCE(anomaly_type, 'unknown') as anomaly_type,\n  confidence,\n  CASE WHEN COALESCE((SELECT COUNT(*) FROM remediations r WHERE r.pod_name = ml_predictions.pod_name AND r.executed_at > ml_predictions.timestamp LIMIT 1), 0) > 0 as COALESCE((SELECT COUNT(*) FROM remediations r WHERE r.pod_name = ml_predictions.pod_name AND r.executed_at > ml_predictions.timestamp LIMIT 1), 0) > 0 as COALESCE((SELECT COUNT(*) FROM remediations r WHERE r.pod_name = ml_predictions.pod_name AND r.executed_at > ml_predictions.timestamp LIMIT 1), 0) > 0 as remediation_applied THEN 'Yes' ELSE 'No' END as remediated\nFROM ml_predictions\nWHERE $__timeFilter(timestamp)\n  AND is_anomaly = 1\nORDER BY timestamp DESC\nLIMIT 20",
+          "rawSql": "SELECT\n  timestamp,\n  pod_name,\n  namespace,\n  COALESCE(anomaly_type, 'unknown') as anomaly_type,\n  confidence,\n  CASE WHEN COALESCE((SELECT COUNT(*) FROM remediations r WHERE r.pod_name = ml_predictions.pod_name AND r.executed_at > ml_predictions.timestamp LIMIT 1), 0) > 0 THEN 'Yes' ELSE 'No' END as remediated\nFROM ml_predictions\nWHERE $__timeFilter(timestamp)\n  AND is_anomaly = 1\nORDER BY timestamp DESC\nLIMIT 20",
           "refId": "A",
           "select": [
             [
@@ -451,7 +451,7 @@
           "group": [],
           "metricColumn": "none",
           "rawQuery": true,
-          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  (COUNT(*) FILTER (WHERE success = true) * 100.0 / NULLIF(COUNT(*), 0)) as success_rate\nFROM remediations\nWHERE $__timeFilter(timestamp)\nGROUP BY time\nORDER BY time",
+          "rawSql": "SELECT\n  time_bucket('1 minute', executed_at) as time,\n  (COUNT(*) FILTER (WHERE success = true) * 100.0 / NULLIF(COUNT(*), 0)) as success_rate\nFROM remediations\nWHERE $__timeFilter(executed_at)\nGROUP BY time\nORDER BY time",
           "refId": "A",
           "select": [
             [
