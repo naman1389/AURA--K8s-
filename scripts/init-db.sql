@@ -276,7 +276,7 @@ BEGIN
     -- Set is_anomaly based on various criteria
     IF NEW.is_anomaly IS NULL OR NEW.is_anomaly = 0 THEN
         NEW.is_anomaly := CASE
-            WHEN NEW.predicted_issue IS NOT NULL THEN 1
+            WHEN NEW.predicted_issue IS NOT NULL AND NEW.predicted_issue != 'healthy' THEN 1
             WHEN NEW.prediction_value > 0.5 THEN 1
             WHEN NEW.oom_score > 0.7 OR NEW.crash_loop_score > 0.7 OR NEW.high_cpu_score > 0.7 THEN 1
             WHEN NEW.disk_pressure_score > 0.7 OR NEW.network_error_score > 0.7 THEN 1

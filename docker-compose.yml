@@ -61,10 +61,11 @@ services:
       - aura-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:11434/api/tags || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   # Ollama Model Puller - Ensures model is available
   ollama-pull:
@@ -91,6 +92,8 @@ services:
     container_name: aura-collector
     ports:
       - "9090:9090"
+    profiles:
+      - disabled
     environment:
       - DATABASE_URL=postgresql://aura:aura_password@timescaledb:5432/aura_metrics?sslmode=disable
       - COLLECTION_INTERVAL=15s
@@ -117,6 +120,8 @@ services:
     container_name: aura-remediator
     ports:
       - "9091:9091"
+    profiles:
+      - disabled
     environment:
       - DATABASE_URL=postgresql://aura:aura_password@timescaledb:5432/aura_metrics?sslmode=disable
       - MCP_SERVER_URL=http://mcp-server:8000
@@ -162,10 +167,6 @@ services:
     depends_on:
       timescaledb:
         condition: service_healthy
-      ollama:
-        condition: service_healthy
-      ollama-pull:
-        condition: service_completed_successfully
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
       interval: 30s
@@ -245,14 +246,13 @@ services:
       DATABASE_URL: postgresql://aura:aura_password@timescaledb:5432/aura_metrics
       ML_SERVICE_URL: http://ml-service:8001
       MCP_SERVICE_URL: http://mcp-server:8000
+      CONFIDENCE_THRESHOLD: "0.50"
       PYTHONUNBUFFERED: "1"
     depends_on:
       timescaledb:
         condition: service_healthy
       ml-service:
         condition: service_healthy
-      mcp-server:
-        condition: service_started
     networks:
       - aura-network
     deploy:

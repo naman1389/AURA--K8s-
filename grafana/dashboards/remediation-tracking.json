@@ -19,7 +19,10 @@
   "links": [],
   "panels": [
     {
-      "datasource": "TimescaleDB",
+      "datasource": {
+        "type": "postgres",
+        "uid": "P40AE60E18F02DE32"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -87,14 +90,21 @@
               "params": [],
               "type": "macro"
             }
-          ]
+          ],
+          "datasource": {
+            "type": "postgres",
+            "uid": "P40AE60E18F02DE32"
+          }
         }
       ],
       "title": "Total Remediations (24h)",
       "type": "stat"
     },
     {
-      "datasource": "TimescaleDB",
+      "datasource": {
+        "type": "postgres",
+        "uid": "P40AE60E18F02DE32"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -170,14 +180,21 @@
               "params": [],
               "type": "macro"
             }
-          ]
+          ],
+          "datasource": {
+            "type": "postgres",
+            "uid": "P40AE60E18F02DE32"
+          }
         }
       ],
       "title": "Success Rate (24h)",
       "type": "gauge"
     },
     {
-      "datasource": "TimescaleDB",
+      "datasource": {
+        "type": "postgres",
+        "uid": "P40AE60E18F02DE32"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -245,14 +262,21 @@
               "params": [],
               "type": "macro"
             }
-          ]
+          ],
+          "datasource": {
+            "type": "postgres",
+            "uid": "P40AE60E18F02DE32"
+          }
         }
       ],
       "title": "Avg Duration (24h)",
       "type": "stat"
     },
     {
-      "datasource": "TimescaleDB",
+      "datasource": {
+        "type": "postgres",
+        "uid": "P40AE60E18F02DE32"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -327,14 +351,21 @@
               "params": [],
               "type": "macro"
             }
-          ]
+          ],
+          "datasource": {
+            "type": "postgres",
+            "uid": "P40AE60E18F02DE32"
+          }
         }
       ],
       "title": "Remediation Strategies Used (24h)",
       "type": "piechart"
     },
     {
-      "datasource": "TimescaleDB",
+      "datasource": {
+        "type": "postgres",
+        "uid": "P40AE60E18F02DE32"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -457,14 +488,21 @@
               "params": [],
               "type": "macro"
             }
-          ]
+          ],
+          "datasource": {
+            "type": "postgres",
+            "uid": "P40AE60E18F02DE32"
+          }
         }
       ],
       "title": "Remediation Success vs Failures",
       "type": "timeseries"
     },
     {
-      "datasource": "TimescaleDB",
+      "datasource": {
+        "type": "postgres",
+        "uid": "P40AE60E18F02DE32"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -557,14 +595,21 @@
               "params": [],
               "type": "macro"
             }
-          ]
+          ],
+          "datasource": {
+            "type": "postgres",
+            "uid": "P40AE60E18F02DE32"
+          }
         }
       ],
       "title": "Remediation Duration Trends",
       "type": "timeseries"
     },
     {
-      "datasource": "TimescaleDB",
+      "datasource": {
+        "type": "postgres",
+        "uid": "P40AE60E18F02DE32"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -713,14 +758,21 @@
               "params": [],
               "type": "macro"
             }
-          ]
+          ],
+          "datasource": {
+            "type": "postgres",
+            "uid": "P40AE60E18F02DE32"
+          }
         }
       ],
       "title": "Recent Remediation Actions",
       "type": "table"
     },
     {
-      "datasource": "TimescaleDB",
+      "datasource": {
+        "type": "postgres",
+        "uid": "P40AE60E18F02DE32"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -812,14 +864,21 @@
               "params": [],
               "type": "macro"
             }
-          ]
+          ],
+          "datasource": {
+            "type": "postgres",
+            "uid": "P40AE60E18F02DE32"
+          }
         }
       ],
       "title": "Strategy Usage Over Time",
       "type": "timeseries"
     },
     {
-      "datasource": "TimescaleDB",
+      "datasource": {
+        "type": "postgres",
+        "uid": "P40AE60E18F02DE32"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -952,7 +1011,11 @@
               "params": [],
               "type": "macro"
             }
-          ]
+          ],
+          "datasource": {
+            "type": "postgres",
+            "uid": "P40AE60E18F02DE32"
+          }
         }
       ],
       "title": "Strategy Performance Summary (24h)",

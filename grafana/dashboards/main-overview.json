@@ -19,7 +19,10 @@
   "links": [],
   "panels": [
     {
-      "datasource": "TimescaleDB",
+      "datasource": {
+        "type": "postgres",
+        "uid": "P40AE60E18F02DE32"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -95,14 +98,21 @@
               "params": [],
               "type": "macro"
             }
-          ]
+          ],
+          "datasource": {
+            "type": "postgres",
+            "uid": "P40AE60E18F02DE32"
+          }
         }
       ],
       "title": "Cluster Health Score",
       "type": "gauge"
     },
     {
-      "datasource": "TimescaleDB",
+      "datasource": {
+        "type": "postgres",
+        "uid": "P40AE60E18F02DE32"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -175,14 +185,21 @@
               "params": [],
               "type": "macro"
             }
-          ]
+          ],
+          "datasource": {
+            "type": "postgres",
+            "uid": "P40AE60E18F02DE32"
+          }
         }
       ],
       "title": "Active Issues (24h)",
       "type": "piechart"
     },
     {
-      "datasource": "TimescaleDB",
+      "datasource": {
+        "type": "postgres",
+        "uid": "P40AE60E18F02DE32"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -275,14 +292,21 @@
               "params": [],
               "type": "macro"
             }
-          ]
+          ],
+          "datasource": {
+            "type": "postgres",
+            "uid": "P40AE60E18F02DE32"
+          }
         }
       ],
       "title": "Resource Utilization Trends",
       "type": "timeseries"
     },
     {
-      "datasource": "TimescaleDB",
+      "datasource": {
+        "type": "postgres",
+        "uid": "P40AE60E18F02DE32"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -387,14 +411,21 @@
               "params": [],
               "type": "macro"
             }
-          ]
+          ],
+          "datasource": {
+            "type": "postgres",
+            "uid": "P40AE60E18F02DE32"
+          }
         }
       ],
       "title": "Recent Anomalies",
       "type": "table"
     },
     {
-      "datasource": "TimescaleDB",
+      "datasource": {
+        "type": "postgres",
+        "uid": "P40AE60E18F02DE32"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -470,14 +501,21 @@
               "params": [],
               "type": "macro"
             }
-          ]
+          ],
+          "datasource": {
+            "type": "postgres",
+            "uid": "P40AE60E18F02DE32"
+          }
         }
       ],
       "title": "Remediation Success Rate (24h)",
       "type": "gauge"
     },
     {
-      "datasource": "TimescaleDB",
+      "datasource": {
+        "type": "postgres",
+        "uid": "P40AE60E18F02DE32"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -569,7 +607,11 @@
               "params": [],
               "type": "macro"
             }
-          ]
+          ],
+          "datasource": {
+            "type": "postgres",
+            "uid": "P40AE60E18F02DE32"
+          }
         }
       ],
       "title": "Anomaly Detection Rate",

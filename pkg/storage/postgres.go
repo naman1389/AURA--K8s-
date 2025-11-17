@@ -254,6 +254,7 @@ func (p *PostgresDB) InitSchema(ctx context.Context) error {
 			NEW.anomaly_type := COALESCE(NEW.predicted_issue, NEW.prediction_type);
 		END IF;
 		
+		-- CRITICAL FIX: Check if predicted_issue is NOT 'healthy' before marking as anomaly
 		IF NEW.is_anomaly IS NULL OR NEW.is_anomaly = 0 THEN
 			NEW.is_anomaly := CASE
 				WHEN NEW.predicted_issue IS NOT NULL AND NEW.predicted_issue != 'healthy' THEN 1

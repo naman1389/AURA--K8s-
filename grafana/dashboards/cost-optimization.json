@@ -19,7 +19,10 @@
   "links": [],
   "panels": [
     {
-      "datasource": "TimescaleDB",
+      "datasource": {
+        "type": "postgres",
+        "uid": "P40AE60E18F02DE32"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -87,14 +90,21 @@
               "params": [],
               "type": "macro"
             }
-          ]
+          ],
+          "datasource": {
+            "type": "postgres",
+            "uid": "P40AE60E18F02DE32"
+          }
         }
       ],
       "title": "Estimated Daily Cost",
       "type": "stat"
     },
     {
-      "datasource": "TimescaleDB",
+      "datasource": {
+        "type": "postgres",
+        "uid": "P40AE60E18F02DE32"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -162,14 +172,21 @@
               "params": [],
               "type": "macro"
             }
-          ]
+          ],
+          "datasource": {
+            "type": "postgres",
+            "uid": "P40AE60E18F02DE32"
+          }
         }
       ],
       "title": "Savings from Auto-Optimization (30d)",
       "type": "stat"
     },
     {
-      "datasource": "TimescaleDB",
+      "datasource": {
+        "type": "postgres",
+        "uid": "P40AE60E18F02DE32"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -243,14 +260,21 @@
               "params": [],
               "type": "macro"
             }
-          ]
+          ],
+          "datasource": {
+            "type": "postgres",
+            "uid": "P40AE60E18F02DE32"
+          }
         }
       ],
       "title": "Resource Efficiency Score",
       "type": "gauge"
     },
     {
-      "datasource": "TimescaleDB",
+      "datasource": {
+        "type": "postgres",
+        "uid": "P40AE60E18F02DE32"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -318,14 +342,21 @@
               "params": [],
               "type": "macro"
             }
-          ]
+          ],
+          "datasource": {
+            "type": "postgres",
+            "uid": "P40AE60E18F02DE32"
+          }
         }
       ],
       "title": "Auto-Optimizations (24h)",
       "type": "stat"
     },
     {
-      "datasource": "TimescaleDB",
+      "datasource": {
+        "type": "postgres",
+        "uid": "P40AE60E18F02DE32"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -418,14 +449,21 @@
               "params": [],
               "type": "macro"
             }
-          ]
+          ],
+          "datasource": {
+            "type": "postgres",
+            "uid": "P40AE60E18F02DE32"
+          }
         }
       ],
       "title": "Cost Trend Over Time",
       "type": "timeseries"
     },
     {
-      "datasource": "TimescaleDB",
+      "datasource": {
+        "type": "postgres",
+        "uid": "P40AE60E18F02DE32"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -499,14 +537,21 @@
               "params": [],
               "type": "macro"
             }
-          ]
+          ],
+          "datasource": {
+            "type": "postgres",
+            "uid": "P40AE60E18F02DE32"
+          }
         }
       ],
       "title": "Cost Distribution by Namespace",
       "type": "piechart"
     },
     {
-      "datasource": "TimescaleDB",
+      "datasource": {
+        "type": "postgres",
+        "uid": "P40AE60E18F02DE32"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -667,14 +712,21 @@
               "params": [],
               "type": "macro"
             }
-          ]
+          ],
+          "datasource": {
+            "type": "postgres",
+            "uid": "P40AE60E18F02DE32"
+          }
         }
       ],
       "title": "Resource Waste Analysis & Recommendations",
       "type": "table"
     },
     {
-      "datasource": "TimescaleDB",
+      "datasource": {
+        "type": "postgres",
+        "uid": "P40AE60E18F02DE32"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -797,14 +849,21 @@
               "params": [],
               "type": "macro"
             }
-          ]
+          ],
+          "datasource": {
+            "type": "postgres",
+            "uid": "P40AE60E18F02DE32"
+          }
         }
       ],
       "title": "CPU vs Memory Cost Breakdown",
       "type": "timeseries"
     },
     {
-      "datasource": "TimescaleDB",
+      "datasource": {
+        "type": "postgres",
+        "uid": "P40AE60E18F02DE32"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -913,7 +972,11 @@
               "params": [],
               "type": "macro"
             }
-          ]
+          ],
+          "datasource": {
+            "type": "postgres",
+            "uid": "P40AE60E18F02DE32"
+          }
         }
       ],
       "title": "Daily Savings from Optimizations",

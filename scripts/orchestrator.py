@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://aura:aura_password@timescaledb:5432/aura_metrics")
 ML_SERVICE_URL = os.getenv("ML_SERVICE_URL", "http://ml-service:8001")
 PREDICTION_INTERVAL = int(os.getenv("PREDICTION_INTERVAL", "30"))
-CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", "0.70"))
+CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", "0.50"))  # Lowered from 0.70 to 0.50 to detect more anomalies
 
 # Feature names must match training script exactly
 FEATURE_NAMES = [

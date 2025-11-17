@@ -19,7 +19,10 @@
   "links": [],
   "panels": [
     {
-      "datasource": "TimescaleDB",
+      "datasource": {
+        "type": "postgres",
+        "uid": "P40AE60E18F02DE32"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -95,14 +98,21 @@
               "params": [],
               "type": "macro"
             }
-          ]
+          ],
+          "datasource": {
+            "type": "postgres",
+            "uid": "P40AE60E18F02DE32"
+          }
         }
       ],
       "title": "Model Confidence (1h)",
       "type": "gauge"
     },
     {
-      "datasource": "TimescaleDB",
+      "datasource": {
+        "type": "postgres",
+        "uid": "P40AE60E18F02DE32"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -172,14 +182,21 @@
               "params": [],
               "type": "macro"
             }
-          ]
+          ],
+          "datasource": {
+            "type": "postgres",
+            "uid": "P40AE60E18F02DE32"
+          }
         }
       ],
       "title": "Model Accuracy",
       "type": "gauge"
     },
     {
-      "datasource": "TimescaleDB",
+      "datasource": {
+        "type": "postgres",
+        "uid": "P40AE60E18F02DE32"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -247,14 +264,21 @@
               "params": [],
               "type": "macro"
             }
-          ]
+          ],
+          "datasource": {
+            "type": "postgres",
+            "uid": "P40AE60E18F02DE32"
+          }
         }
       ],
       "title": "Predictions (1h)",
       "type": "stat"
     },
     {
-      "datasource": "TimescaleDB",
+      "datasource": {
+        "type": "postgres",
+        "uid": "P40AE60E18F02DE32"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -328,14 +352,21 @@
               "params": [],
               "type": "macro"
             }
-          ]
+          ],
+          "datasource": {
+            "type": "postgres",
+            "uid": "P40AE60E18F02DE32"
+          }
         }
       ],
       "title": "Detections by Model (24h)",
       "type": "piechart"
     },
     {
-      "datasource": "TimescaleDB",
+      "datasource": {
+        "type": "postgres",
+        "uid": "P40AE60E18F02DE32"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -429,14 +460,21 @@
               "params": [],
               "type": "macro"
             }
-          ]
+          ],
+          "datasource": {
+            "type": "postgres",
+            "uid": "P40AE60E18F02DE32"
+          }
         }
       ],
       "title": "Prediction Confidence Over Time",
       "type": "timeseries"
     },
     {
-      "datasource": "TimescaleDB",
+      "datasource": {
+        "type": "postgres",
+        "uid": "P40AE60E18F02DE32"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -528,14 +566,21 @@
               "params": [],
               "type": "macro"
             }
-          ]
+          ],
+          "datasource": {
+            "type": "postgres",
+            "uid": "P40AE60E18F02DE32"
+          }
         }
       ],
       "title": "Anomaly Types Over Time",
       "type": "timeseries"
     },
     {
-      "datasource": "TimescaleDB",
+      "datasource": {
+        "type": "postgres",
+        "uid": "P40AE60E18F02DE32"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -672,14 +717,21 @@
               "params": [],
               "type": "macro"
             }
-          ]
+          ],
+          "datasource": {
+            "type": "postgres",
+            "uid": "P40AE60E18F02DE32"
+          }
         }
       ],
       "title": "Detailed Prediction Log",
       "type": "table"
     },
     {
-      "datasource": "TimescaleDB",
+      "datasource": {
+        "type": "postgres",
+        "uid": "P40AE60E18F02DE32"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -773,7 +825,11 @@
               "params": [],
               "type": "macro"
             }
-          ]
+          ],
+          "datasource": {
+            "type": "postgres",
+            "uid": "P40AE60E18F02DE32"
+          }
         }
       ],
       "title": "Real-time Anomaly Detection Rate",

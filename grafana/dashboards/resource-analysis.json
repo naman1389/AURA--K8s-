@@ -19,7 +19,10 @@
   "links": [],
   "panels": [
     {
-      "datasource": "TimescaleDB",
+      "datasource": {
+        "type": "postgres",
+        "uid": "P40AE60E18F02DE32"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -154,14 +157,21 @@
               "params": [],
               "type": "macro"
             }
-          ]
+          ],
+          "datasource": {
+            "type": "postgres",
+            "uid": "P40AE60E18F02DE32"
+          }
         }
       ],
       "title": "Cluster CPU & Memory Utilization",
       "type": "timeseries"
     },
     {
-      "datasource": "TimescaleDB",
+      "datasource": {
+        "type": "postgres",
+        "uid": "P40AE60E18F02DE32"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -286,14 +296,21 @@
               "params": [],
               "type": "macro"
             }
-          ]
+          ],
+          "datasource": {
+            "type": "postgres",
+            "uid": "P40AE60E18F02DE32"
+          }
         }
       ],
       "title": "Network Traffic",
       "type": "timeseries"
     },
     {
-      "datasource": "TimescaleDB",
+      "datasource": {
+        "type": "postgres",
+        "uid": "P40AE60E18F02DE32"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -466,14 +483,21 @@
               "params": [],
               "type": "macro"
             }
-          ]
+          ],
+          "datasource": {
+            "type": "postgres",
+            "uid": "P40AE60E18F02DE32"
+          }
         }
       ],
       "title": "Top Resource Consumers",
       "type": "table"
     },
     {
-      "datasource": "TimescaleDB",
+      "datasource": {
+        "type": "postgres",
+        "uid": "P40AE60E18F02DE32"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -547,14 +571,21 @@
               "params": [],
               "type": "macro"
             }
-          ]
+          ],
+          "datasource": {
+            "type": "postgres",
+            "uid": "P40AE60E18F02DE32"
+          }
         }
       ],
       "title": "CPU Usage by Namespace",
       "type": "piechart"
     },
     {
-      "datasource": "TimescaleDB",
+      "datasource": {
+        "type": "postgres",
+        "uid": "P40AE60E18F02DE32"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -647,14 +678,21 @@
               "params": [],
               "type": "macro"
             }
-          ]
+          ],
+          "datasource": {
+            "type": "postgres",
+            "uid": "P40AE60E18F02DE32"
+          }
         }
       ],
       "title": "Pod Restart Trends",
       "type": "timeseries"
     },
     {
-      "datasource": "TimescaleDB",
+      "datasource": {
+        "type": "postgres",
+        "uid": "P40AE60E18F02DE32"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -747,14 +785,21 @@
               "params": [],
               "type": "macro"
             }
-          ]
+          ],
+          "datasource": {
+            "type": "postgres",
+            "uid": "P40AE60E18F02DE32"
+          }
         }
       ],
       "title": "Disk I/O Activity",
       "type": "timeseries"
     },
     {
-      "datasource": "TimescaleDB",
+      "datasource": {
+        "type": "postgres",
+        "uid": "P40AE60E18F02DE32"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -853,7 +898,11 @@
               "params": [],
               "type": "macro"
             }
-          ]
+          ],
+          "datasource": {
+            "type": "postgres",
+            "uid": "P40AE60E18F02DE32"
+          }
         }
       ],
       "title": "Pod CPU Heatmap",

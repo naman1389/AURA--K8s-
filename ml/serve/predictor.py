@@ -33,7 +33,7 @@ class PredictionResponse(BaseModel):
 
 @app.on_event("startup")
 async def load_models():
-    global models, scaler, label_encoder, feature_names, anomaly_types, EXPECTED_FEATURES
+    global models, scaler, label_encoder, feature_names, anomaly_types
     
     # Validate model directory exists
     if not MODEL_DIR.exists():
