@@ -5,7 +5,7 @@ datasources:
     uid: aura-timescaledb
     type: postgres
     access: proxy
-    url: timescaledb:5432
+    url: localhost:5432
     database: aura_metrics
     user: aura
     secureJsonData:
@@ -13,8 +13,8 @@ datasources:
     jsonData:
       database: aura_metrics
       sslmode: "disable"
-      postgresVersion: 1500
-      timescaledb: true
+      postgresVersion: 1400
+      timescaledb: false
       maxOpenConns: 100
       maxIdleConns: 25
       connMaxLifetime: 14400

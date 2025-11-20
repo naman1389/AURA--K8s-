@@ -15,13 +15,12 @@
   "editable": true,
   "gnetId": null,
   "graphTooltip": 0,
-  "id": 1003,
   "links": [],
   "panels": [
     {
       "datasource": {
         "type": "postgres",
-        "uid": "P40AE60E18F02DE32"
+        "uid": "aura-timescaledb"
       },
       "fieldConfig": {
         "defaults": {
@@ -93,7 +92,7 @@
           ],
           "datasource": {
             "type": "postgres",
-            "uid": "P40AE60E18F02DE32"
+            "uid": "aura-timescaledb"
           }
         }
       ],
@@ -103,7 +102,7 @@
     {
       "datasource": {
         "type": "postgres",
-        "uid": "P40AE60E18F02DE32"
+        "uid": "aura-timescaledb"
       },
       "fieldConfig": {
         "defaults": {
@@ -175,7 +174,7 @@
           ],
           "datasource": {
             "type": "postgres",
-            "uid": "P40AE60E18F02DE32"
+            "uid": "aura-timescaledb"
           }
         }
       ],
@@ -185,7 +184,7 @@
     {
       "datasource": {
         "type": "postgres",
-        "uid": "P40AE60E18F02DE32"
+        "uid": "aura-timescaledb"
       },
       "fieldConfig": {
         "defaults": {
@@ -263,7 +262,7 @@
           ],
           "datasource": {
             "type": "postgres",
-            "uid": "P40AE60E18F02DE32"
+            "uid": "aura-timescaledb"
           }
         }
       ],
@@ -273,7 +272,7 @@
     {
       "datasource": {
         "type": "postgres",
-        "uid": "P40AE60E18F02DE32"
+        "uid": "aura-timescaledb"
       },
       "fieldConfig": {
         "defaults": {
@@ -345,7 +344,7 @@
           ],
           "datasource": {
             "type": "postgres",
-            "uid": "P40AE60E18F02DE32"
+            "uid": "aura-timescaledb"
           }
         }
       ],
@@ -355,7 +354,7 @@
     {
       "datasource": {
         "type": "postgres",
-        "uid": "P40AE60E18F02DE32"
+        "uid": "aura-timescaledb"
       },
       "fieldConfig": {
         "defaults": {
@@ -452,7 +451,7 @@
           ],
           "datasource": {
             "type": "postgres",
-            "uid": "P40AE60E18F02DE32"
+            "uid": "aura-timescaledb"
           }
         }
       ],
@@ -462,7 +461,7 @@
     {
       "datasource": {
         "type": "postgres",
-        "uid": "P40AE60E18F02DE32"
+        "uid": "aura-timescaledb"
       },
       "fieldConfig": {
         "defaults": {
@@ -540,7 +539,7 @@
           ],
           "datasource": {
             "type": "postgres",
-            "uid": "P40AE60E18F02DE32"
+            "uid": "aura-timescaledb"
           }
         }
       ],
@@ -550,7 +549,7 @@
     {
       "datasource": {
         "type": "postgres",
-        "uid": "P40AE60E18F02DE32"
+        "uid": "aura-timescaledb"
       },
       "fieldConfig": {
         "defaults": {
@@ -715,7 +714,7 @@
           ],
           "datasource": {
             "type": "postgres",
-            "uid": "P40AE60E18F02DE32"
+            "uid": "aura-timescaledb"
           }
         }
       ],
@@ -725,7 +724,7 @@
     {
       "datasource": {
         "type": "postgres",
-        "uid": "P40AE60E18F02DE32"
+        "uid": "aura-timescaledb"
       },
       "fieldConfig": {
         "defaults": {
@@ -852,7 +851,7 @@
           ],
           "datasource": {
             "type": "postgres",
-            "uid": "P40AE60E18F02DE32"
+            "uid": "aura-timescaledb"
           }
         }
       ],
@@ -862,7 +861,7 @@
     {
       "datasource": {
         "type": "postgres",
-        "uid": "P40AE60E18F02DE32"
+        "uid": "aura-timescaledb"
       },
       "fieldConfig": {
         "defaults": {
@@ -975,7 +974,7 @@
           ],
           "datasource": {
             "type": "postgres",
-            "uid": "P40AE60E18F02DE32"
+            "uid": "aura-timescaledb"
           }
         }
       ],
@@ -983,7 +982,7 @@
       "type": "timeseries"
     }
   ],
-  "refresh": "1m",
+  "refresh": "10s",
   "schemaVersion": 36,
   "style": "dark",
   "tags": [
@@ -996,7 +995,7 @@
     "list": []
   },
   "time": {
-    "from": "now-7d",
+    "from": "now-1h",
     "to": "now"
   },
   "timepicker": {},

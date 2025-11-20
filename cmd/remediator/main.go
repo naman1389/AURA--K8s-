@@ -161,6 +161,13 @@ func remediateIssue(ctx context.Context, k8sClient *k8s.Client, db *storage.Post
 	// Execute remediation
 	success, errorMsg := executeRemediation(ctx, k8sClient, issue, recommendation)
 
+	// Calculate completion time
+	endTime := time.Now()
+	var completedAt *time.Time
+	if success {
+		completedAt = &endTime
+	}
+
 	// Save remediation record
 	remediation := &metrics.Remediation{
 		ID:               uuid.New().String(),
@@ -169,11 +176,14 @@ func remediateIssue(ctx context.Context, k8sClient *k8s.Client, db *storage.Post
 		Namespace:        issue.Namespace,
 		Action:           recommendation.Action,
 		ActionDetails:    recommendation.ActionDetails,
-		ExecutedAt:       time.Now(),
+		ExecutedAt:       startTime,
 		Success:          success,
 		ErrorMessage:     errorMsg,
 		AIRecommendation: recommendation.Reasoning,
 		TimeToResolve:    int(time.Since(startTime).Seconds()),
+		Strategy:         recommendation.Action,
+		CompletedAt:      completedAt,
+		Timestamp:        startTime,
 	}
 
 	if err := db.SaveRemediation(ctx, remediation); err != nil {
@@ -184,12 +194,15 @@ func remediateIssue(ctx context.Context, k8sClient *k8s.Client, db *storage.Post
 	if success {
 		now := time.Now()
 		issue.ResolvedAt = &now
-		issue.Status = "Resolved"
+		issue.Status = "resolved"
 	} else {
-		issue.Status = "InProgress"
+		issue.Status = "in_progress"
 	}
 
-	if err := db.SaveIssue(ctx, issue); err != nil {
+	// Update issue in database using direct SQL since SaveIssue expects new inserts
+	query := `UPDATE issues SET status = $1, resolved_at = $2 WHERE id = $3`
+	_, err = db.ExecRaw(ctx, query, issue.Status, issue.ResolvedAt, issue.ID)
+	if err != nil {
 		return fmt.Errorf("failed to update issue: %w", err)
 	}
 

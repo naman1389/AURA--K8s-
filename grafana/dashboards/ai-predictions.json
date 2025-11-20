@@ -15,13 +15,12 @@
   "editable": true,
   "gnetId": null,
   "graphTooltip": 0,
-  "id": 1002,
   "links": [],
   "panels": [
     {
       "datasource": {
         "type": "postgres",
-        "uid": "P40AE60E18F02DE32"
+        "uid": "aura-timescaledb"
       },
       "fieldConfig": {
         "defaults": {
@@ -101,7 +100,7 @@
           ],
           "datasource": {
             "type": "postgres",
-            "uid": "P40AE60E18F02DE32"
+            "uid": "aura-timescaledb"
           }
         }
       ],
@@ -111,7 +110,7 @@
     {
       "datasource": {
         "type": "postgres",
-        "uid": "P40AE60E18F02DE32"
+        "uid": "aura-timescaledb"
       },
       "fieldConfig": {
         "defaults": {
@@ -185,7 +184,7 @@
           ],
           "datasource": {
             "type": "postgres",
-            "uid": "P40AE60E18F02DE32"
+            "uid": "aura-timescaledb"
           }
         }
       ],
@@ -195,7 +194,7 @@
     {
       "datasource": {
         "type": "postgres",
-        "uid": "P40AE60E18F02DE32"
+        "uid": "aura-timescaledb"
       },
       "fieldConfig": {
         "defaults": {
@@ -267,7 +266,7 @@
           ],
           "datasource": {
             "type": "postgres",
-            "uid": "P40AE60E18F02DE32"
+            "uid": "aura-timescaledb"
           }
         }
       ],
@@ -277,7 +276,7 @@
     {
       "datasource": {
         "type": "postgres",
-        "uid": "P40AE60E18F02DE32"
+        "uid": "aura-timescaledb"
       },
       "fieldConfig": {
         "defaults": {
@@ -355,7 +354,7 @@
           ],
           "datasource": {
             "type": "postgres",
-            "uid": "P40AE60E18F02DE32"
+            "uid": "aura-timescaledb"
           }
         }
       ],
@@ -365,7 +364,7 @@
     {
       "datasource": {
         "type": "postgres",
-        "uid": "P40AE60E18F02DE32"
+        "uid": "aura-timescaledb"
       },
       "fieldConfig": {
         "defaults": {
@@ -463,7 +462,7 @@
           ],
           "datasource": {
             "type": "postgres",
-            "uid": "P40AE60E18F02DE32"
+            "uid": "aura-timescaledb"
           }
         }
       ],
@@ -473,7 +472,7 @@
     {
       "datasource": {
         "type": "postgres",
-        "uid": "P40AE60E18F02DE32"
+        "uid": "aura-timescaledb"
       },
       "fieldConfig": {
         "defaults": {
@@ -569,7 +568,7 @@
           ],
           "datasource": {
             "type": "postgres",
-            "uid": "P40AE60E18F02DE32"
+            "uid": "aura-timescaledb"
           }
         }
       ],
@@ -579,7 +578,7 @@
     {
       "datasource": {
         "type": "postgres",
-        "uid": "P40AE60E18F02DE32"
+        "uid": "aura-timescaledb"
       },
       "fieldConfig": {
         "defaults": {
@@ -720,7 +719,7 @@
           ],
           "datasource": {
             "type": "postgres",
-            "uid": "P40AE60E18F02DE32"
+            "uid": "aura-timescaledb"
           }
         }
       ],
@@ -730,7 +729,7 @@
     {
       "datasource": {
         "type": "postgres",
-        "uid": "P40AE60E18F02DE32"
+        "uid": "aura-timescaledb"
       },
       "fieldConfig": {
         "defaults": {
@@ -828,7 +827,7 @@
           ],
           "datasource": {
             "type": "postgres",
-            "uid": "P40AE60E18F02DE32"
+            "uid": "aura-timescaledb"
           }
         }
       ],
@@ -850,7 +849,7 @@
     "list": []
   },
   "time": {
-    "from": "now-3h",
+    "from": "now-1h",
     "to": "now"
   },
   "timepicker": {},

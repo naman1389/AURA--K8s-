@@ -32,8 +32,10 @@ ml/train/data/*.csv
 
 # Environment
 .env
-.env.local
 .env.example
+
+# Local environment (keep .env.local as template)
+# .env.local
 
 # Data & Databases
 data/
@@ -72,3 +74,19 @@ Thumbs.db
 timescaledb_data/
 grafana_data/
 ollama_data/
+
+# Grafana generated files
+.grafana/plugins/
+.grafana/provisioning/
+
+# ML model binaries (large files)
+ml/train/models/*.joblib
+ml/train/models/label_encoder.joblib
+ml/train/models/scaler.joblib
+ml/train/models/training_metadata.json
+
+# Local environment files
+.pids/
+venv/
+bin/collector
+bin/remediator
