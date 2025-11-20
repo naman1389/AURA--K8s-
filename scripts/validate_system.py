@@ -120,24 +120,37 @@ def test_ml_service():
         if response.status_code == 200:
             print_success("ML service is healthy")
             
-            # Test prediction endpoint
+            # Test prediction endpoint with correct features format
+            # Test prediction endpoint with correct features format
             test_data = {
-                "pod_name": "test-pod",
-                "namespace": "default",
-                "cpu_utilization": 85.5,
-                "memory_utilization": 75.0,
-                "restarts": 2,
-                "cpu_trend": 10.5,
-                "memory_trend": 5.2
+                "features": {
+                    "cpu_usage": 85.5,
+                    "memory_usage": 75.0,
+                    "disk_usage": 50.0,
+                    "network_bytes_sec": 1000.0,
+                    "error_rate": 0.05,
+                    "latency_ms": 100.0,
+                    "restart_count": 2.0,
+                    "age_minutes": 120.0,
+                    "cpu_memory_ratio": 1.14,
+                    "resource_pressure": 0.8,
+                    "error_latency_product": 5.0,
+                    "network_per_cpu": 11.7,
+                    "is_critical": 1.0
+                }
             }
             
             response = requests.post(f"{ML_SERVICE_URL}/predict", json=test_data, timeout=10)
             if response.status_code == 200:
                 result = response.json()
-                print_success(f"Prediction API works: {result.get('predicted_issue', 'N/A')}")
+                print_success(f"Prediction API works: {result.get('anomaly_type', 'N/A')} (confidence: {result.get('confidence', 0):.2%})")
                 return True
             else:
                 print_error(f"Prediction API failed: {response.status_code}")
+                try:
+                    print_error(f"  Error: {response.json()}")
+                except:
+                    pass
                 return False
         else:
             print_error(f"ML service unhealthy: {response.status_code}")
@@ -210,7 +223,7 @@ def test_dashboards():
             """),
             ("CPU Usage Query", """
                 SELECT
-                  time_bucket('5 minutes', timestamp) as time,
+                  date_trunc('minute', timestamp) as time,
                   AVG(COALESCE(cpu_utilization, 0)) as cpu_usage,
                   AVG(COALESCE(memory_utilization, 0)) as memory_usage
                 FROM pod_metrics

@@ -214,14 +214,14 @@ async def call_ollama(prompt: str, retries: int = 2) -> str:
                         "model": OLLAMA_MODEL,
                         "prompt": prompt,
                         "stream": False,
-                        "temperature": 0.3,  # Lower temp for more consistent output
+                        "temperature": 0.3, 
                     },
                 )
 
                 if response.status_code != 200:
                     logger.error(f"Ollama returned status {response.status_code}: {response.text}")
                     if attempt < retries - 1:
-                        await asyncio.sleep(2 ** attempt)  # Exponential backoff
+                        await asyncio.sleep(2 ** attempt) 
                         continue
                     raise Exception(f"Ollama API error: {response.status_code}")
 

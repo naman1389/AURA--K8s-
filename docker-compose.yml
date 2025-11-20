@@ -1,3 +1,6 @@
+# AURA K8s - Docker Compose Configuration
+# Use .env.docker for environment variables
+
 services:
   # TimescaleDB - Time-series database
   timescaledb:
