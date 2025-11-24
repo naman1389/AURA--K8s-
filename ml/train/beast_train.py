@@ -46,6 +46,14 @@ except ImportError:
 # Feature engineering
 from feature_engineering import AdvancedFeatureEngineer
 
+# Dataset downloading
+try:
+    from dataset_downloader import DatasetDownloader
+    DATASET_DOWNLOADER_AVAILABLE = True
+except ImportError:
+    DATASET_DOWNLOADER_AVAILABLE = False
+    print("⚠️  DatasetDownloader not available, using synthetic data only")
+
 warnings.filterwarnings('ignore')
 
 # Configuration
@@ -59,6 +67,97 @@ CHUNK_SIZE = int(os.getenv("ML_CHUNK_SIZE", "10000"))
 # Model directory
 MODEL_DIR = Path("models")
 MODEL_DIR.mkdir(exist_ok=True)
+
+
+class WeightedEnsemble:
+    """
+    Weighted voting ensemble - module-level class for pickling
+    Combines multiple models with weighted voting
+    """
+    def __init__(self, models, weights, n_classes):
+        self.models = models
+        self.weights = weights
+        self.n_classes = n_classes
+    
+    def predict(self, X):
+        """Predict using weighted ensemble voting"""
+        predictions = []
+        probabilities = []
+        
+        for name, model in self.models.items():
+            if name == 'isolation_forest' or name == 'ensemble':
+                # Skip isolation forest and ensemble itself
+                continue
+            
+            try:
+                proba = model.predict_proba(X)
+                predictions.append(proba)
+                probabilities.append(proba)
+            except Exception as e:
+                # If predict_proba fails, try predict and convert
+                pred = model.predict(X)
+                # Create one-hot encoded probabilities
+                proba = np.zeros((len(X), self.n_classes))
+                for i, p in enumerate(pred):
+                    if 0 <= p < self.n_classes:
+                        proba[i, int(p)] = 1.0
+                predictions.append(proba)
+                probabilities.append(proba)
+        
+        if not predictions:
+            # Fallback to first available model
+            for name, model in self.models.items():
+                if name not in ['isolation_forest', 'ensemble']:
+                    return model.predict(X)
+            return np.zeros(len(X))
+        
+        # Weighted average
+        final_proba = np.zeros_like(predictions[0])
+        valid_models = [k for k in self.models.keys() if k not in ['isolation_forest', 'ensemble']]
+        for i, (name, proba) in enumerate(zip(valid_models, predictions)):
+            weight = self.weights.get(name, 0.0)
+            final_proba += weight * proba
+        
+        # Normalize
+        final_proba = final_proba / (final_proba.sum(axis=1, keepdims=True) + 1e-9)
+        
+        return np.argmax(final_proba, axis=1)
+    
+    def predict_proba(self, X):
+        """Predict probabilities using weighted ensemble"""
+        predictions = []
+        
+        for name, model in self.models.items():
+            if name == 'isolation_forest' or name == 'ensemble':
+                continue
+            
+            try:
+                proba = model.predict_proba(X)
+                predictions.append(proba)
+            except Exception as e:
+                # Fallback
+                pred = model.predict(X)
+                proba = np.zeros((len(X), self.n_classes))
+                for i, p in enumerate(pred):
+                    if 0 <= p < self.n_classes:
+                        proba[i, int(p)] = 1.0
+                predictions.append(proba)
+        
+        if not predictions:
+            # Fallback
+            for name, model in self.models.items():
+                if name not in ['isolation_forest', 'ensemble']:
+                    return model.predict_proba(X) if hasattr(model, 'predict_proba') else np.zeros((len(X), self.n_classes))
+            return np.zeros((len(X), self.n_classes))
+        
+        final_proba = np.zeros_like(predictions[0])
+        valid_models = [k for k in self.models.keys() if k not in ['isolation_forest', 'ensemble']]
+        for i, (name, proba) in enumerate(zip(valid_models, predictions)):
+            weight = self.weights.get(name, 0.0)
+            final_proba += weight * proba
+        
+        final_proba = final_proba / (final_proba.sum(axis=1, keepdims=True) + 1e-9)
+        return final_proba
 
 
 class BeastLevelTrainer:
@@ -80,14 +179,18 @@ class BeastLevelTrainer:
         
     def load_data(self, data_path: Optional[str] = None, 
                   from_database: bool = False,
-                  db_connection_string: Optional[str] = None) -> Tuple[pd.DataFrame, pd.Series]:
+                  db_connection_string: Optional[str] = None,
+                  from_dataset: Optional[str] = None,
+                  use_real_datasets: bool = True) -> Tuple[pd.DataFrame, pd.Series]:
         """
-        Load training data from file or database
+        Load training data from file, database, or downloaded datasets
         
         Args:
             data_path: Path to CSV file
             from_database: Load from PostgreSQL database
             db_connection_string: Database connection string
+            from_dataset: Dataset name to download/use (synthetic_k8s, yahoo_s5, etc.)
+            use_real_datasets: Whether to try downloading real datasets first
             
         Returns:
             Tuple of (features DataFrame, labels Series)
@@ -99,10 +202,42 @@ class BeastLevelTrainer:
         elif data_path and os.path.exists(data_path):
             df = pd.read_csv(data_path, low_memory=False)
             print(f"   Loaded {len(df)} samples from {data_path}")
+        elif from_dataset and DATASET_DOWNLOADER_AVAILABLE:
+            # Handle multiple datasets (comma-separated)
+            dataset_names = [d.strip() for d in from_dataset.split(',')]
+            print(f"   Loading datasets: {dataset_names}")
+            downloader = DatasetDownloader()
+            
+            all_dataframes = []
+            for dataset_name in dataset_names:
+                try:
+                    print(f"   📥 Downloading/Loading {dataset_name}...")
+                    dataset_path = downloader.download_dataset(dataset_name, force=False)
+                    df_single = downloader.load_dataset(dataset_name)
+                    print(f"   ✅ Loaded {len(df_single)} samples from {dataset_name}")
+                    all_dataframes.append(df_single)
+                except Exception as e:
+                    print(f"   ⚠️  Failed to load {dataset_name}: {e}")
+                    print(f"   Continuing with other datasets...")
+            
+            if all_dataframes:
+                # Combine all datasets
+                df = pd.concat(all_dataframes, ignore_index=True)
+                print(f"   ✅ Combined total: {len(df)} samples from {len(all_dataframes)} datasets")
+            else:
+                print(f"   ⚠️  No datasets loaded, falling back to synthetic...")
+                df = self._generate_synthetic_data(n_samples=100000)
+        elif use_real_datasets and DATASET_DOWNLOADER_AVAILABLE:
+            # Try to download and use synthetic_k8s dataset (always available)
+            print("   Downloading/Generating synthetic Kubernetes dataset...")
+            downloader = DatasetDownloader()
+            dataset_path = downloader.download_dataset("synthetic_k8s", force=False)
+            df = downloader.load_dataset("synthetic_k8s")
+            print(f"   Loaded {len(df)} samples from synthetic dataset")
         else:
             # Generate synthetic data for testing
             print("   No data source provided, generating synthetic data...")
-            df = self._generate_synthetic_data(n_samples=50000)
+            df = self._generate_synthetic_data(n_samples=100000)  # Increased default
         
         # Separate features and labels
         if 'anomaly_type' in df.columns:
@@ -113,8 +248,13 @@ class BeastLevelTrainer:
             y = self._create_labels_from_indicators(df)
             X_raw = df
         
-        # Store anomaly types
-        self.anomaly_types = sorted(y.unique().tolist())
+        # Convert labels to strings to handle mixed types (float/str) from different datasets
+        y = y.astype(str)
+        
+        # Store anomaly types (handle mixed types by converting to string)
+        unique_labels = y.unique().tolist()
+        # Filter out NaN and convert to string, then sort
+        self.anomaly_types = sorted([str(label) for label in unique_labels if str(label) != 'nan' and str(label).lower() != 'none'])
         print(f"   Found {len(self.anomaly_types)} anomaly types: {self.anomaly_types[:10]}...")
         
         return X_raw, y
@@ -514,62 +654,7 @@ class BeastLevelTrainer:
         return model
     
     def _create_ensemble(self):
-        """Create weighted ensemble"""
-        class WeightedEnsemble:
-            def __init__(self, models, weights):
-                self.models = models
-                self.weights = weights
-            
-            def predict(self, X):
-                predictions = []
-                probabilities = []
-                
-                for name, model in self.models.items():
-                    if name == 'isolation_forest':
-                        # Isolation Forest returns -1 (anomaly) or 1 (normal)
-                        pred = model.predict(X)
-                        # Convert to probability-like scores
-                        proba = np.zeros((len(X), len(self.models['xgboost'].classes_)))
-                        # Simple mapping: -1 -> high anomaly probability for first class
-                        proba[:, 0] = (pred == -1).astype(float)
-                        proba[:, 1:] = (pred == 1).astype(float) / (len(proba[0]) - 1)
-                    else:
-                        proba = model.predict_proba(X)
-                    
-                    predictions.append(proba)
-                
-                # Weighted average
-                final_proba = np.zeros_like(predictions[0])
-                for i, (name, proba) in enumerate(zip(self.models.keys(), predictions)):
-                    weight = self.weights.get(name, 0.0)
-                    final_proba += weight * proba
-                
-                # Normalize
-                final_proba = final_proba / final_proba.sum(axis=1, keepdims=True)
-                
-                return np.argmax(final_proba, axis=1)
-            
-            def predict_proba(self, X):
-                predictions = []
-                
-                for name, model in self.models.items():
-                    if name == 'isolation_forest':
-                        pred = model.predict(X)
-                        proba = np.zeros((len(X), len(self.models['xgboost'].classes_)))
-                        proba[:, 0] = (pred == -1).astype(float)
-                        proba[:, 1:] = (pred == 1).astype(float) / (len(proba[0]) - 1)
-                    else:
-                        proba = model.predict_proba(X)
-                    predictions.append(proba)
-                
-                final_proba = np.zeros_like(predictions[0])
-                for i, (name, proba) in enumerate(zip(self.models.keys(), predictions)):
-                    weight = self.weights.get(name, 0.0)
-                    final_proba += weight * proba
-                
-                final_proba = final_proba / final_proba.sum(axis=1, keepdims=True)
-                return final_proba
-        
+        """Create weighted ensemble using module-level WeightedEnsemble class"""
         # Weights based on expected performance
         weights = {
             'xgboost': 0.35,
@@ -583,7 +668,15 @@ class BeastLevelTrainer:
         total = sum(w for w in weights.values() if w > 0)
         weights = {k: v/total if v > 0 else 0 for k, v in weights.items()}
         
-        return WeightedEnsemble(self.models, weights)
+        # Get number of classes from first available model
+        n_classes = len(self.label_encoder.classes_) if hasattr(self, 'label_encoder') and self.label_encoder else 24
+        for name, model in self.models.items():
+            if hasattr(model, 'classes_'):
+                n_classes = len(model.classes_)
+                break
+        
+        # Use module-level WeightedEnsemble class (picklable)
+        return WeightedEnsemble(self.models, weights, n_classes)
     
     def _evaluate_model(self, name: str, model, X_test, y_test):
         """Evaluate model and store results"""
@@ -620,11 +713,23 @@ class BeastLevelTrainer:
                 joblib.dump(model, model_path)
                 print(f"   💾 Saved {name} model")
         
-        # Save ensemble separately (as a pickle of the wrapper)
+        # Save ensemble (now using module-level class, can be pickled)
         if 'ensemble' in self.models:
             ensemble_path = MODEL_DIR / "ensemble_model.joblib"
-            joblib.dump(self.models['ensemble'], ensemble_path)
-            print(f"   💾 Saved ensemble model")
+            try:
+                joblib.dump(self.models['ensemble'], ensemble_path)
+                print(f"   💾 Saved ensemble model")
+            except Exception as e:
+                # If pickle still fails, save ensemble info to reconstruct later
+                print(f"   ⚠️  Could not save ensemble directly: {e}")
+                ensemble_info = {
+                    'model_names': [k for k in self.models.keys() if k != 'ensemble'],
+                    'weights': {k: v for k, v in self.models['ensemble'].weights.items()},
+                    'n_classes': self.models['ensemble'].n_classes
+                }
+                with open(MODEL_DIR / "ensemble_info.json", "w") as f:
+                    json.dump(ensemble_info, f, indent=2)
+                print(f"   💾 Saved ensemble info (can be reconstructed)")
         
         # Save scaler
         joblib.dump(self.scaler, MODEL_DIR / "scaler.joblib")
@@ -681,20 +786,32 @@ def main():
     print("="*70)
     print("🚀 AURA K8s - BEAST LEVEL ML TRAINING")
     print("   Mac M4 Optimized - CPU-Only Training")
+    print("   Zero Cost - Real Datasets + Synthetic Data")
     print("="*70)
     
     # Initialize trainer
     trainer = BeastLevelTrainer(memory_limit_gb=MEMORY_LIMIT_GB)
     
-    # Load data
+    # Load data - try multiple sources
     data_path = os.getenv("TRAINING_DATA_PATH", None)
     from_db = os.getenv("LOAD_FROM_DATABASE", "false").lower() == "true"
     db_conn = os.getenv("DATABASE_URL", None)
+    dataset_name = os.getenv("DATASET_NAME", "synthetic_k8s")  # Default to synthetic
+    use_real_datasets = os.getenv("USE_REAL_DATASETS", "true").lower() == "true"
+    
+    print(f"\n📊 Data Loading Strategy:")
+    print(f"   • Dataset: {dataset_name}")
+    print(f"   • Use real datasets: {use_real_datasets}")
+    print(f"   • From database: {from_db}")
+    print(f"   • Data path: {data_path}")
+    print()
     
     X_raw, y = trainer.load_data(
         data_path=data_path,
         from_database=from_db,
-        db_connection_string=db_conn
+        db_connection_string=db_conn,
+        from_dataset=dataset_name if use_real_datasets else None,
+        use_real_datasets=use_real_datasets
     )
     
     # Train models

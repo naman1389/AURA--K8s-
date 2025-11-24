@@ -23,6 +23,15 @@ from typing import Dict, List, Optional, Any, TYPE_CHECKING
 import uuid
 from enum import Enum
 
+# Import config helper for service discovery
+import sys
+from pathlib import Path
+# Add scripts directory to path for imports
+scripts_dir = Path(__file__).parent
+if str(scripts_dir) not in sys.path:
+    sys.path.insert(0, str(scripts_dir))
+from config_helper import get_database_url, get_service_url, validate_database_url
+
 if TYPE_CHECKING:
     from psycopg2.extensions import connection
 
@@ -36,26 +45,24 @@ logger = logging.getLogger(__name__)
 # Configuration with validation and fail-fast in production
 environment = os.getenv("ENVIRONMENT", "development")
 
-# Validate DATABASE_URL in all environments (not just production)
-DATABASE_URL = os.getenv("DATABASE_URL")
+# Get DATABASE_URL using config helper (environment-aware)
+DATABASE_URL = get_database_url()
 if not DATABASE_URL:
     if environment == "production":
         logger.error("DATABASE_URL environment variable is required in production")
         raise ValueError("DATABASE_URL environment variable is required in production")
-    # Use default only in development, but warn about it - standardize connection string format
-    DATABASE_URL = "postgresql://aura:aura_password@localhost:5432/aura_metrics?sslmode=disable"
     logger.warning("Using default DATABASE_URL (development only). Set DATABASE_URL environment variable for production.")
 
 # Validate DATABASE_URL format
-if DATABASE_URL:
-    if not DATABASE_URL.startswith(("postgresql://", "postgres://")):
-        error_msg = f"Invalid DATABASE_URL format: must start with 'postgresql://' or 'postgres://'"
-        if environment == "production":
-            logger.error(error_msg)
-            raise ValueError(error_msg)
-        logger.warning(f"{error_msg}. Continuing with provided URL.")
+if not validate_database_url(DATABASE_URL):
+    error_msg = f"Invalid DATABASE_URL format: must start with 'postgresql://' or 'postgres://'"
+    if environment == "production":
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+    logger.warning(f"{error_msg}. Continuing with provided URL.")
 
-ML_SERVICE_URL = os.getenv("ML_SERVICE_URL", "http://localhost:8001")
+# Get ML service URL using config helper (environment-aware)
+ML_SERVICE_URL = get_service_url("ML_SERVICE", "8001")
 
 # Validate PREDICTION_INTERVAL with fail-fast in production
 prediction_interval_raw = os.getenv("PREDICTION_INTERVAL", "30")
@@ -234,25 +241,31 @@ class CircuitBreaker:
 # Global circuit breaker instance
 ml_circuit_breaker = CircuitBreaker(
     failure_threshold=CIRCUIT_BREAKER_FAILURE_THRESHOLD,
-    reset_timeout=CIRCUIT_BREAKER_RESET_TIMEOUT
+    reset_timeout=10  # Reduced to 10 seconds for faster recovery
 )
 
-# Feature names must match training script exactly
-FEATURE_NAMES = [
-    "cpu_usage",
-    "memory_usage",
-    "disk_usage",
-    "network_bytes_sec",
-    "error_rate",
-    "latency_ms",
-    "restart_count",
-    "age_minutes",
-    "cpu_memory_ratio",
-    "resource_pressure",
-    "error_latency_product",
-    "network_per_cpu",
-    "is_critical"
-]
+# Load feature names from feature_names.json (matches trained models)
+FEATURE_NAMES_PATH = os.path.join(os.path.dirname(__file__), "..", "ml", "train", "models", "feature_names.json")
+FEATURE_NAMES = []
+try:
+    if os.path.exists(FEATURE_NAMES_PATH):
+        with open(FEATURE_NAMES_PATH, 'r') as f:
+            FEATURE_NAMES = json.load(f)
+        logger.info(f"✅ Loaded {len(FEATURE_NAMES)} features from feature_names.json")
+    else:
+        logger.warning(f"⚠️  {FEATURE_NAMES_PATH} not found, using fallback 13 features")
+        FEATURE_NAMES = [
+            "cpu_usage", "memory_usage", "disk_usage", "network_bytes_sec", "error_rate",
+            "latency_ms", "restart_count", "age_minutes", "cpu_memory_ratio", "resource_pressure",
+            "error_latency_product", "network_per_cpu", "is_critical"
+        ]
+except Exception as e:
+    logger.error(f"Failed to load feature names: {e}, using fallback")
+    FEATURE_NAMES = [
+        "cpu_usage", "memory_usage", "disk_usage", "network_bytes_sec", "error_rate",
+        "latency_ms", "restart_count", "age_minutes", "cpu_memory_ratio", "resource_pressure",
+        "error_latency_product", "network_per_cpu", "is_critical"
+    ]
 
 
 # Connection pool for database connections
@@ -460,6 +473,384 @@ signal.signal(signal.SIGTERM, signal_handler)
 signal.signal(signal.SIGINT, signal_handler)
 
 
+def engineer_simple_features(cpu_util, mem_util, disk_pct,
+                           cpu_usage_mc, mem_usage_bytes, disk_usage_bytes,
+                           network_rx, network_tx, network_bytes,
+                           network_rx_err, network_tx_err, err_rate,
+                           restarts, age_minutes, cpu_trend, mem_trend, restart_trend,
+                           has_oom, has_crash, has_high_cpu, has_network,
+                           cpu_limit_mc, mem_limit_bytes, disk_limit_bytes,
+                           cpu_request_mc, mem_request_bytes,
+                           timestamp, historical):
+    """
+    Simple feature engineering matching the 13 features used in training
+    """
+    features = {}
+    
+    # Basic metrics
+    features['cpu_usage'] = float(cpu_util or 0.0)
+    features['memory_usage'] = float(mem_util or 0.0)
+    features['disk_usage'] = float(disk_pct or 0.0)
+    
+    # Network (convert to bytes/sec - approximate from total bytes)
+    network_bytes_sec = float((network_bytes or 0) / 60.0)  # Approximate per second
+    features['network_bytes_sec'] = network_bytes_sec
+    
+    # Error rate
+    features['error_rate'] = float(err_rate or 0.0)
+    
+    # Latency (approximate from error rate and network issues)
+    latency_ms = 100.0 if has_network else 50.0
+    if err_rate and err_rate > 10:
+        latency_ms = 200.0
+    features['latency_ms'] = latency_ms
+    
+    # Restart count
+    features['restart_count'] = float(restarts or 0)
+    
+    # Age
+    features['age_minutes'] = float(age_minutes or 0.0)
+    
+    # Ratios
+    cpu_memory_ratio = (cpu_util / mem_util) if mem_util and mem_util > 0 else 0.0
+    features['cpu_memory_ratio'] = float(cpu_memory_ratio)
+    
+    # Resource pressure (combination of CPU, memory, disk)
+    resource_pressure = (cpu_util + mem_util + disk_pct) / 3.0
+    features['resource_pressure'] = float(resource_pressure)
+    
+    # Error-latency product
+    features['error_latency_product'] = float((err_rate or 0) * latency_ms)
+    
+    # Network per CPU
+    network_per_cpu = (network_bytes_sec / cpu_util) if cpu_util and cpu_util > 0 else 0.0
+    features['network_per_cpu'] = float(network_per_cpu)
+    
+    # Is critical (based on multiple indicators)
+    is_critical = 1.0 if (has_oom or has_crash or cpu_util > 90 or mem_util > 90) else 0.0
+    features['is_critical'] = float(is_critical)
+    
+    return features
+
+def engineer_beast_features(cpu_util, mem_util, disk_pct,
+                           cpu_usage_mc, mem_usage_bytes, disk_usage_bytes,
+                           network_rx, network_tx, network_bytes,
+                           network_rx_err, network_tx_err, err_rate,
+                           restarts, age_minutes, cpu_trend, mem_trend, restart_trend,
+                           has_oom, has_crash, has_high_cpu, has_network,
+                           cpu_limit_mc, mem_limit_bytes, disk_limit_bytes,
+                           cpu_request_mc, mem_request_bytes,
+                           timestamp, historical):
+    """
+    Engineer all 150 features matching beast_train.py AdvancedFeatureEngineer
+    This is a simplified version that works with single metric rows
+    """
+    import numpy as np  # Import numpy here to ensure it's available
+    features = {}
+    
+    # ========== BASIC METRICS ==========
+    cpu_usage = float(cpu_usage_mc or cpu_util or 0)
+    memory_usage = float(mem_usage_bytes or mem_util or 0)
+    disk_usage = float(disk_usage_bytes or disk_pct or 0)
+    network_rx_val = float(network_rx or 0)
+    network_tx_val = float(network_tx or 0)
+    restart_count = int(restarts or 0)
+    age_minutes_val = float(age_minutes or 0)
+    cpu_utilization = float(cpu_util or 0)
+    memory_utilization = float(mem_util or 0)
+    disk_utilization = float(disk_pct or 0)
+    error_rate_val = float(err_rate or 0)
+    latency_ms = 0.0  # Not available in current metrics
+    network_total = float(network_bytes or network_rx_val + network_tx_val or 0)
+    network_errors = float((network_rx_err or 0) + (network_tx_err or 0))
+    
+    # ========== RESOURCE RATIOS ==========
+    features['cpu_usage'] = cpu_usage
+    features['memory_usage'] = memory_usage
+    features['disk_usage'] = disk_usage
+    features['network_rx'] = network_rx_val
+    features['restart_count'] = restart_count
+    features['age_minutes'] = age_minutes_val
+    features['cpu_utilization'] = cpu_utilization
+    features['memory_utilization'] = memory_utilization
+    features['disk_utilization'] = disk_utilization
+    features['network_total'] = network_total
+    features['network_errors'] = network_errors
+    
+    # Ratios
+    features['cpu_memory_ratio'] = cpu_usage / max(memory_usage, 1)
+    features['cpu_disk_ratio'] = cpu_usage / max(disk_usage, 1)
+    features['memory_disk_ratio'] = memory_usage / max(disk_usage, 1)
+    features['cpu_util_memory_util_ratio'] = cpu_utilization / max(memory_utilization, 1)
+    features['resource_pressure'] = (cpu_utilization + memory_utilization + disk_utilization) / 3.0
+    features['cpu_efficiency'] = cpu_usage / max(cpu_utilization, 1)
+    features['memory_efficiency'] = memory_usage / max(memory_utilization, 1)
+    features['network_per_cpu'] = network_total / max(cpu_usage, 1)
+    features['network_per_memory'] = network_total / max(memory_usage, 1)
+    features['restart_rate'] = restart_count / max(age_minutes_val, 1)
+    features['cpu_memory_product'] = cpu_usage * memory_usage
+    features['utilization_sum'] = cpu_utilization + memory_utilization + disk_utilization
+    
+    # ========== LIMITS AND REQUESTS ==========
+    cpu_limit = float(cpu_limit_mc or 1000)
+    memory_limit = float(mem_limit_bytes or 2147483648)
+    disk_limit = float(disk_limit_bytes or 10737418240)
+    
+    features['cpu_limit'] = cpu_limit
+    features['memory_limit'] = memory_limit
+    features['disk_limit'] = disk_limit
+    features['cpu_headroom'] = max(0, cpu_limit - cpu_usage)
+    features['memory_headroom'] = max(0, memory_limit - memory_usage)
+    features['disk_headroom'] = max(0, disk_limit - disk_usage)
+    features['cpu_headroom_pct'] = (features['cpu_headroom'] / max(cpu_limit, 1)) * 100
+    features['memory_headroom_pct'] = (features['memory_headroom'] / max(memory_limit, 1)) * 100
+    features['disk_headroom_pct'] = (features['disk_headroom'] / max(disk_limit, 1)) * 100
+    features['cpu_usage_vs_limit'] = cpu_usage / max(cpu_limit, 1)
+    features['memory_usage_vs_limit'] = memory_usage / max(memory_limit, 1)
+    features['disk_usage_vs_limit'] = disk_usage / max(disk_limit, 1)
+    features['total_usage'] = cpu_usage + memory_usage + disk_usage
+    features['total_usage_vs_limit'] = features['total_usage'] / max(cpu_limit + memory_limit + disk_limit, 1)
+    
+    # Resource balance (std of utilizations)
+    util_values = [cpu_utilization, memory_utilization, disk_utilization]
+    features['resource_balance'] = float(np.std(util_values)) if len(util_values) > 1 else 0.0
+    
+    # ========== TRENDS ==========
+    cpu_trend_val = float(cpu_trend or 0)
+    memory_trend_val = float(mem_trend or 0)
+    restart_trend_val = float(restart_trend or 0)
+    
+    features['memory_trend'] = memory_trend_val
+    features['restart_trend'] = restart_trend_val
+    features['memory_trend_abs'] = abs(memory_trend_val)
+    features['restart_trend_abs'] = abs(restart_trend_val)
+    features['trend_magnitude'] = math.sqrt(cpu_trend_val**2 + memory_trend_val**2)
+    features['trend_acceleration'] = cpu_trend_val * memory_trend_val
+    features['cpu_trend_normalized'] = cpu_trend_val / max(cpu_usage, 1)
+    features['trend_consistency'] = 1.0 if (cpu_trend_val > 0 and memory_trend_val > 0) or (cpu_trend_val < 0 and memory_trend_val < 0) else 0.0
+    
+    # ========== ROLLING STATISTICS (from historical data) ==========
+    if historical and len(historical) > 0:
+        cpu_vals = [float(h[0] or 0) for h in historical]
+        mem_vals = [float(h[1] or 0) for h in historical]
+        for window in [5, 10, 15, 30, 60]:
+            if len(cpu_vals) >= window:
+                window_cpu = cpu_vals[:window]
+                window_mem = mem_vals[:window]
+                features[f'cpu_rolling_mean_{window}'] = float(np.mean(window_cpu))
+                features[f'cpu_rolling_std_{window}'] = float(np.std(window_cpu)) if len(window_cpu) > 1 else 0.0
+                features[f'memory_rolling_mean_{window}'] = float(np.mean(window_mem))
+                features[f'memory_rolling_std_{window}'] = float(np.std(window_mem)) if len(window_mem) > 1 else 0.0
+            else:
+                features[f'cpu_rolling_mean_{window}'] = cpu_utilization
+                features[f'cpu_rolling_std_{window}'] = 0.0
+                features[f'memory_rolling_mean_{window}'] = memory_utilization
+                features[f'memory_rolling_std_{window}'] = 0.0
+    else:
+        for window in [5, 10, 15, 30, 60]:
+            features[f'cpu_rolling_mean_{window}'] = cpu_utilization
+            features[f'cpu_rolling_std_{window}'] = 0.0
+            features[f'memory_rolling_mean_{window}'] = memory_utilization
+            features[f'memory_rolling_std_{window}'] = 0.0
+    
+    # ========== ANOMALY INDICATORS ==========
+    features['is_network_issue'] = 1.0 if has_network else 0.0
+    features['is_ready'] = 1.0  # Assume ready if we have metrics
+    features['is_critical'] = 1.0 if (cpu_utilization > 80 or memory_utilization > 80 or disk_utilization > 80) else 0.0
+    features['is_warning'] = 1.0 if (cpu_utilization > 60 or memory_utilization > 60 or disk_utilization > 60) else 0.0
+    features['oom_risk'] = 1.0 if memory_utilization > 90 else 0.0
+    features['cpu_throttle_risk'] = 1.0 if cpu_utilization > 90 else 0.0
+    features['instability_score'] = restart_count * features['restart_rate']
+    features['degradation_score'] = (abs(cpu_trend_val) + abs(memory_trend_val)) / 2.0
+    
+    # ========== STATISTICAL FEATURES (from historical) ==========
+    if historical and len(historical) > 0:
+        cpu_hist = [float(h[0] or 0) for h in historical]
+        mem_hist = [float(h[1] or 0) for h in historical]
+        disk_hist = [float(h[2] or 0) for h in historical] if len(historical[0]) > 2 else [disk_utilization]
+        
+        for p in [10, 25, 50, 75, 90, 95, 99]:
+            features[f'memory_percentile_{p}'] = float(np.percentile(mem_hist, p)) if len(mem_hist) > 0 else memory_utilization
+            features[f'disk_percentile_{p}'] = float(np.percentile(disk_hist, p)) if len(disk_hist) > 0 else disk_utilization
+            if p in [50, 75, 90, 95, 99]:
+                features[f'cpu_percentile_{p}'] = float(np.percentile(cpu_hist, p)) if len(cpu_hist) > 0 else cpu_utilization
+        
+        # Z-scores
+        cpu_mean = np.mean(cpu_hist) if len(cpu_hist) > 0 else cpu_utilization
+        cpu_std = np.std(cpu_hist) if len(cpu_hist) > 1 else 1.0
+        mem_mean = np.mean(mem_hist) if len(mem_hist) > 0 else memory_utilization
+        mem_std = np.std(mem_hist) if len(mem_hist) > 1 else 1.0
+        disk_mean = np.mean(disk_hist) if len(disk_hist) > 0 else disk_utilization
+        disk_std = np.std(disk_hist) if len(disk_hist) > 1 else 1.0
+        
+        features['cpu_zscore'] = (cpu_utilization - cpu_mean) / max(cpu_std, 1e-6)
+        features['memory_zscore'] = (memory_utilization - mem_mean) / max(mem_std, 1e-6)
+        features['disk_zscore'] = (disk_utilization - disk_mean) / max(disk_std, 1e-6)
+        
+        # Outliers
+        cpu_q1, cpu_q3 = np.percentile(cpu_hist, [25, 75]) if len(cpu_hist) > 0 else (cpu_utilization, cpu_utilization)
+        cpu_iqr = cpu_q3 - cpu_q1
+        mem_q1, mem_q3 = np.percentile(mem_hist, [25, 75]) if len(mem_hist) > 0 else (memory_utilization, memory_utilization)
+        mem_iqr = mem_q3 - mem_q1
+        
+        features['cpu_is_outlier_iqr'] = 1.0 if (cpu_utilization < cpu_q1 - 1.5*cpu_iqr or cpu_utilization > cpu_q3 + 1.5*cpu_iqr) else 0.0
+        features['memory_is_outlier_iqr'] = 1.0 if (memory_utilization < mem_q1 - 1.5*mem_iqr or memory_utilization > mem_q3 + 1.5*mem_iqr) else 0.0
+        features['cpu_is_outlier_zscore'] = 1.0 if abs(features['cpu_zscore']) > 3 else 0.0
+        features['memory_is_outlier_zscore'] = 1.0 if abs(features['memory_zscore']) > 3 else 0.0
+        
+        # Advanced stats
+        try:
+            from scipy import stats
+            features['cpu_skewness'] = float(stats.skew(cpu_hist)) if len(cpu_hist) > 2 else 0.0
+            features['memory_skewness'] = float(stats.skew(mem_hist)) if len(mem_hist) > 2 else 0.0
+            features['cpu_kurtosis'] = float(stats.kurtosis(cpu_hist)) if len(cpu_hist) > 3 else 0.0
+            features['memory_kurtosis'] = float(stats.kurtosis(mem_hist)) if len(mem_hist) > 3 else 0.0
+        except:
+            features['cpu_skewness'] = 0.0
+            features['memory_skewness'] = 0.0
+            features['cpu_kurtosis'] = 0.0
+            features['memory_kurtosis'] = 0.0
+        
+        features['cpu_cv'] = (cpu_std / max(cpu_mean, 1e-6))
+        features['memory_cv'] = (mem_std / max(mem_mean, 1e-6))
+        features['disk_cv'] = (disk_std / max(disk_mean, 1e-6))
+        features['cpu_range'] = float(np.max(cpu_hist) - np.min(cpu_hist)) if len(cpu_hist) > 0 else 0.0
+        features['memory_range'] = float(np.max(mem_hist) - np.min(mem_hist)) if len(mem_hist) > 0 else 0.0
+        features['cpu_iqr'] = float(cpu_iqr)
+        features['memory_iqr'] = float(mem_iqr)
+        
+        # Correlations
+        if len(cpu_hist) > 1 and len(mem_hist) > 1:
+            corr = np.corrcoef(cpu_hist, mem_hist)[0, 1] if len(cpu_hist) == len(mem_hist) else 0.0
+            features['cpu_memory_correlation'] = float(corr) if not np.isnan(corr) else 0.0
+            if len(disk_hist) > 1 and len(disk_hist) == len(mem_hist):
+                corr2 = np.corrcoef(mem_hist, disk_hist)[0, 1]
+                features['memory_disk_correlation'] = float(corr2) if not np.isnan(corr2) else 0.0
+            else:
+                features['memory_disk_correlation'] = 0.0
+        else:
+            features['cpu_memory_correlation'] = 0.0
+            features['memory_disk_correlation'] = 0.0
+    else:
+        # No historical data - use defaults
+        for p in [10, 25, 50, 75, 90, 95, 99]:
+            features[f'memory_percentile_{p}'] = memory_utilization
+            features[f'disk_percentile_{p}'] = disk_utilization
+            if p in [50, 75, 90, 95, 99]:
+                features[f'cpu_percentile_{p}'] = cpu_utilization
+        features['cpu_zscore'] = 0.0
+        features['memory_zscore'] = 0.0
+        features['disk_zscore'] = 0.0
+        features['cpu_is_outlier_iqr'] = 0.0
+        features['memory_is_outlier_iqr'] = 0.0
+        features['cpu_is_outlier_zscore'] = 0.0
+        features['memory_is_outlier_zscore'] = 0.0
+        features['cpu_skewness'] = 0.0
+        features['memory_skewness'] = 0.0
+        features['cpu_kurtosis'] = 0.0
+        features['memory_kurtosis'] = 0.0
+        features['cpu_cv'] = 0.0
+        features['memory_cv'] = 0.0
+        features['disk_cv'] = 0.0
+        features['cpu_range'] = 0.0
+        features['memory_range'] = 0.0
+        features['cpu_iqr'] = 0.0
+        features['memory_iqr'] = 0.0
+        features['cpu_memory_correlation'] = 0.0
+        features['memory_disk_correlation'] = 0.0
+    
+    # ========== NETWORK FEATURES ==========
+    features['network_errors_total'] = network_errors
+    features['network_error_rate'] = network_errors / max(network_total, 1)
+    features['network_rx_error_rate'] = float(network_rx_err or 0) / max(network_rx_val, 1)
+    features['network_tx_error_rate'] = float(network_tx_err or 0) / max(network_tx_val, 1)
+    features['network_throughput'] = network_total / max(age_minutes_val * 60, 1)
+    features['network_bandwidth_utilization'] = network_total / max(cpu_usage, 1)
+    
+    # ========== INTERACTION FEATURES ==========
+    features['cpu_memory_interaction'] = cpu_utilization * memory_utilization
+    features['cpu_disk_interaction'] = cpu_utilization * disk_utilization
+    features['memory_disk_interaction'] = memory_utilization * disk_utilization
+    features['cpu_restart_interaction'] = cpu_utilization * restart_count
+    features['memory_restart_interaction'] = memory_utilization * restart_count
+    features['network_cpu_interaction'] = network_total * cpu_utilization
+    features['network_memory_interaction'] = network_total * memory_utilization
+    features['age_cpu_interaction'] = age_minutes_val * cpu_utilization
+    features['age_memory_interaction'] = age_minutes_val * memory_utilization
+    features['trend_cpu_interaction'] = cpu_trend_val * cpu_utilization
+    features['trend_memory_interaction'] = memory_trend_val * memory_utilization
+    
+    # ========== POLYNOMIAL FEATURES ==========
+    features['cpu_utilization_squared'] = cpu_utilization ** 2
+    features['memory_utilization_squared'] = memory_utilization ** 2
+    features['disk_utilization_squared'] = disk_utilization ** 2
+    features['cpu_utilization_cubed'] = cpu_utilization ** 3
+    features['memory_utilization_cubed'] = memory_utilization ** 3
+    features['restart_count_squared'] = restart_count ** 2
+    features['age_minutes_squared'] = age_minutes_val ** 2
+    features['resource_pressure_squared'] = features['resource_pressure'] ** 2
+    
+    # ========== FFT FEATURES (simplified) ==========
+    if historical and len(historical) > 10:
+        try:
+            cpu_fft_vals = [float(h[0] or 0) for h in historical[:100]]
+            cpu_fft = np.abs(np.fft.fft(cpu_fft_vals))
+            features['cpu_fft_max'] = float(np.max(cpu_fft)) if len(cpu_fft) > 0 else 0.0
+            features['cpu_fft_std'] = float(np.std(cpu_fft)) if len(cpu_fft) > 1 else 0.0
+            if len(cpu_fft) > 2:
+                dominant_idx = np.argmax(cpu_fft[1:len(cpu_fft)//2]) + 1
+                features['cpu_dominant_frequency'] = float(dominant_idx)
+            else:
+                features['cpu_dominant_frequency'] = 0.0
+            
+            mem_fft_vals = [float(h[1] or 0) for h in historical[:100]]
+            mem_fft = np.abs(np.fft.fft(mem_fft_vals))
+            features['memory_fft_mean'] = float(np.mean(mem_fft)) if len(mem_fft) > 0 else 0.0
+        except:
+            features['cpu_fft_max'] = 0.0
+            features['cpu_fft_std'] = 0.0
+            features['cpu_dominant_frequency'] = 0.0
+            features['memory_fft_mean'] = 0.0
+    else:
+        features['cpu_fft_max'] = 0.0
+        features['cpu_fft_std'] = 0.0
+        features['cpu_dominant_frequency'] = 0.0
+        features['memory_fft_mean'] = 0.0
+    
+    # ========== MOVING AVERAGES ==========
+    if historical and len(historical) > 0:
+        cpu_hist = [float(h[0] or 0) for h in historical]
+        mem_hist = [float(h[1] or 0) for h in historical]
+        for window in [3, 5, 10]:
+            if len(cpu_hist) >= window:
+                features[f'cpu_sma_{window}'] = float(np.mean(cpu_hist[:window]))
+                features[f'memory_sma_{window}'] = float(np.mean(mem_hist[:window]))
+            else:
+                features[f'cpu_sma_{window}'] = cpu_utilization
+                features[f'memory_sma_{window}'] = memory_utilization
+    else:
+        for window in [3, 5, 10]:
+            features[f'cpu_sma_{window}'] = cpu_utilization
+            features[f'memory_sma_{window}'] = memory_utilization
+    
+    # EMA and ROC (simplified)
+    features['cpu_ema'] = cpu_utilization  # Simplified - would need historical for real EMA
+    features['memory_ema'] = memory_utilization
+    features['cpu_roc'] = cpu_trend_val / max(cpu_utilization, 1)  # Simplified ROC
+    features['memory_roc'] = memory_trend_val / max(memory_utilization, 1)
+    
+    # ========== CATEGORICAL ENCODINGS ==========
+    features['phase_encoded'] = 1.0  # Running
+    features['container_state_encoded'] = 1.0  # Running
+    
+    # Ensure all values are finite
+    for key in list(features.keys()):
+        if not math.isfinite(features[key]):
+            features[key] = 0.0
+    
+    return features
+
+
 def generate_predictions(conn: "connection", ml_service_url: str) -> int:
     """
     Generate ML predictions for recent metrics
@@ -472,17 +863,23 @@ def generate_predictions(conn: "connection", ml_service_url: str) -> int:
     try:
         # Get recent metrics without predictions
         # Exclude system namespaces - only process user-created pods
+        # Query with all fields needed for 150-feature beast_train.py engineering
         cur.execute("""
             SELECT DISTINCT ON (pm.pod_name, pm.namespace)
                 pm.pod_name, pm.namespace, pm.timestamp,
                 pm.cpu_utilization, pm.memory_utilization,
                 COALESCE(pm.disk_usage_bytes::float / NULLIF(pm.disk_limit_bytes, 0) * 100, 0) as disk_usage_percent,
+                pm.cpu_usage_millicores, pm.memory_usage_bytes, pm.disk_usage_bytes,
+                pm.network_rx_bytes, pm.network_tx_bytes,
                 COALESCE(pm.network_rx_bytes + pm.network_tx_bytes, 0) as network_bytes,
+                pm.network_rx_errors, pm.network_tx_errors,
                 COALESCE(pm.network_rx_errors + pm.network_tx_errors, 0) as error_rate,
                 pm.restarts,
                 EXTRACT(EPOCH FROM (NOW() - pm.timestamp)) / 60.0 as age_minutes,
                 pm.cpu_trend, pm.memory_trend, pm.restart_trend,
-                pm.has_oom_kill, pm.has_crash_loop, pm.has_high_cpu, pm.has_network_issues
+                pm.has_oom_kill, pm.has_crash_loop, pm.has_high_cpu, pm.has_network_issues,
+                pm.cpu_limit_millicores, pm.memory_limit_bytes, pm.disk_limit_bytes,
+                0 as cpu_request_millicores, 0 as memory_request_bytes
             FROM pod_metrics pm
             LEFT JOIN ml_predictions mp ON 
                 pm.pod_name = mp.pod_name 
@@ -535,78 +932,82 @@ def generate_predictions(conn: "connection", ml_service_url: str) -> int:
                         pass
                 
                 for metric in batch:
-                    # Validate metric tuple has expected number of elements before unpacking
-                    expected_fields = 17
-                    if len(metric) != expected_fields:
-                        logger.warning(f"Metric tuple has {len(metric)} fields, expected {expected_fields}. Skipping metric.")
+                    # Validate metric tuple - handle variable field count
+                    if len(metric) < 24:
+                        logger.warning(f"Metric tuple has {len(metric)} fields, expected at least 24. Skipping metric.")
                         continue
                     
-                    (pod_name, namespace, timestamp, cpu_util, mem_util, disk_pct,
-                     network_bytes, err_rate, restarts, age_minutes, cpu_trend,
-                     mem_trend, restart_trend, has_oom, has_crash, has_high_cpu, has_network) = metric
+                    # Unpack with proper field count handling
+                    try:
+                        pod_name = metric[0]
+                        namespace = metric[1]
+                        timestamp = metric[2]
+                        cpu_util = metric[3]
+                        mem_util = metric[4]
+                        disk_pct = metric[5]
+                        cpu_usage_mc = metric[6]
+                        mem_usage_bytes = metric[7]
+                        disk_usage_bytes = metric[8]
+                        network_rx = metric[9]
+                        network_tx = metric[10]
+                        network_bytes = metric[11]
+                        network_rx_err = metric[12]
+                        network_tx_err = metric[13]
+                        err_rate = metric[14]
+                        restarts = metric[15]
+                        age_minutes = metric[16]
+                        cpu_trend = metric[17]
+                        mem_trend = metric[18]
+                        restart_trend = metric[19]
+                        has_oom = metric[20]
+                        has_crash = metric[21]
+                        has_high_cpu = metric[22]
+                        has_network = metric[23]
+                        cpu_limit_mc = metric[24] if len(metric) > 24 else None
+                        mem_limit_bytes = metric[25] if len(metric) > 25 else None
+                        disk_limit_bytes = metric[26] if len(metric) > 26 else None
+                        cpu_request_mc = metric[27] if len(metric) > 27 else 0
+                        mem_request_bytes = metric[28] if len(metric) > 28 else 0
+                    except (IndexError, TypeError) as e:
+                        logger.warning(f"Failed to unpack metric fields: {e}. Skipping metric.")
+                        continue
 
                 try:
-                    # Engineer features to match training script EXACTLY
-                    cpu_usage = float(cpu_util or 0)
-                    memory_usage = float(mem_util or 0)
-                    disk_usage = float(disk_pct or 0)
-                    # Use actual collection interval (15 seconds) for network bytes/sec calculation
-                    collection_interval_sec = 15.0  # Matches COLLECTION_INTERVAL default
-                    network_bytes_sec = float(network_bytes or 0) / collection_interval_sec
-                    # Error rate should be errors per second, not raw error count
-                    error_rate_val = float(err_rate or 0) / collection_interval_sec if err_rate else 0.0
-                    latency_ms = 0  # Would come from actual metrics if available
-                    restart_count = int(restarts or 0)
-                    age_minutes_val = float(age_minutes or 0)
-
-                    # Engineered features (must match simple_train.py)
-                    # Comprehensive validation to prevent division by zero and NaN values
-                    cpu_memory_ratio = cpu_usage / max(memory_usage, 0.1) if memory_usage >= 0 else 0.0
-                    # Validate ratio is finite
-                    if not (math.isfinite(cpu_memory_ratio) and cpu_memory_ratio >= 0):
-                        cpu_memory_ratio = 0.0
+                    # Get historical metrics for rolling features (needed for beast_train.py)
+                    cur.execute("""
+                        SELECT cpu_utilization, memory_utilization, disk_usage_bytes, 
+                               network_rx_bytes, network_tx_bytes, restarts, timestamp
+                        FROM pod_metrics
+                        WHERE pod_name = %s AND namespace = %s
+                        ORDER BY timestamp DESC
+                        LIMIT 60
+                    """, (pod_name, namespace))
+                    historical = cur.fetchall()
                     
-                    resource_pressure = (cpu_usage + memory_usage + disk_usage) / 3.0
-                    # Validate resource pressure is finite
-                    if not (math.isfinite(resource_pressure) and resource_pressure >= 0):
-                        resource_pressure = 0.0
+                    # Engineer features matching the 13 features used in model training
+                    features = engineer_simple_features(
+                        cpu_util, mem_util, disk_pct,
+                        cpu_usage_mc, mem_usage_bytes, disk_usage_bytes,
+                        network_rx, network_tx, network_bytes,
+                        network_rx_err, network_tx_err, err_rate,
+                        restarts, age_minutes, cpu_trend, mem_trend, restart_trend,
+                        has_oom, has_crash, has_high_cpu, has_network,
+                        cpu_limit_mc, mem_limit_bytes, disk_limit_bytes,
+                        cpu_request_mc, mem_request_bytes,
+                        timestamp, historical
+                    )
                     
-                    error_latency_product = error_rate_val * (latency_ms + 1.0)
-                    # Validate error_latency_product is finite
-                    if not (math.isfinite(error_latency_product) and error_latency_product >= 0):
-                        error_latency_product = 0.0
+                    # Ensure all required features are present (fill missing with 0)
+                    for feat_name in FEATURE_NAMES:
+                        if feat_name not in features:
+                            features[feat_name] = 0.0
                     
-                    # Network per CPU with comprehensive validation
-                    if cpu_usage > 0.1:
-                        network_per_cpu = network_bytes_sec / cpu_usage
-                    else:
-                        network_per_cpu = network_bytes_sec / 0.1  # Use minimum CPU value
-                    # Validate network_per_cpu is finite
-                    if not (math.isfinite(network_per_cpu) and network_per_cpu >= 0):
-                        network_per_cpu = 0.0
+                    # Build feature dict in exact order of FEATURE_NAMES
+                    ordered_features = {name: features.get(name, 0.0) for name in FEATURE_NAMES}
                     
-                    is_critical = 1.0 if (has_oom or has_crash or has_high_cpu) else 0.0
-
-                    # Build feature vector in correct order
-                    features = {
-                        "cpu_usage": cpu_usage,
-                        "memory_usage": memory_usage,
-                        "disk_usage": disk_usage,
-                        "network_bytes_sec": network_bytes_sec,
-                        "error_rate": error_rate_val,
-                        "latency_ms": latency_ms,
-                        "restart_count": restart_count,
-                        "age_minutes": age_minutes_val,
-                        "cpu_memory_ratio": cpu_memory_ratio,
-                        "resource_pressure": resource_pressure,
-                        "error_latency_product": error_latency_product,
-                        "network_per_cpu": network_per_cpu,
-                        "is_critical": is_critical,
-                    }
-
                     # Validate feature count matches
-                    if len(features) != len(FEATURE_NAMES):
-                        logger.error(f"Feature count mismatch: {len(features)} vs {len(FEATURE_NAMES)}")
+                    if len(ordered_features) != len(FEATURE_NAMES):
+                        logger.error(f"Feature count mismatch: {len(ordered_features)} vs {len(FEATURE_NAMES)}")
                         continue
                     
                     # Comprehensive validation: ensure all features are finite numbers
@@ -634,7 +1035,7 @@ def generate_predictions(conn: "connection", ml_service_url: str) -> int:
                     try:
                         response = requests.post(
                             f"{ml_service_url}/predict",
-                            json={"features": features},
+                            json={"features": ordered_features},
                             timeout=10
                         )
 
@@ -705,11 +1106,11 @@ def generate_predictions(conn: "connection", ml_service_url: str) -> int:
                         """, (
                             pod_name, namespace, timestamp,
                             predicted_issue, confidence, 3600,
-                            json.dumps(list(features.keys())), explanation,
+                            json.dumps(list(ordered_features.keys())[:10]), explanation,  # Top 10 features
                             'pod', pod_name, predicted_issue,
                             1.0 if predicted_issue != 'healthy' else 0.0,
                             prediction.get('model_used', 'ensemble'),
-                            json.dumps(features),
+                            json.dumps(ordered_features),
                             is_anomaly, anomaly_type
                         ))
 

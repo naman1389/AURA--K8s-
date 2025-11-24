@@ -189,12 +189,12 @@ func (c *MLClient) Predict(ctx context.Context, podMetrics *metrics.PodMetrics) 
 	networkBytesSec := 0.0
 	if podMetrics.NetworkRxBytes > 0 || podMetrics.NetworkTxBytes > 0 {
 		// Calculate bytes/sec: divide total bytes by collection interval
-		collectionIntervalSec := config.DefaultCollectionInterval.Seconds()
+		collectionIntervalSec := config.GetCollectionInterval().Seconds()
 		if collectionIntervalSec > 0 {
 			networkBytesSec = float64(podMetrics.NetworkRxBytes+podMetrics.NetworkTxBytes) / collectionIntervalSec
 		} else {
-			// Fallback: assume 15 seconds if config is invalid
-			networkBytesSec = float64(podMetrics.NetworkRxBytes+podMetrics.NetworkTxBytes) / 15.0
+			// Fallback: assume 500ms if config is invalid
+			networkBytesSec = float64(podMetrics.NetworkRxBytes+podMetrics.NetworkTxBytes) / 0.5
 		}
 	}
 
@@ -209,7 +209,7 @@ func (c *MLClient) Predict(ctx context.Context, podMetrics *metrics.PodMetrics) 
 	errorRate := 0.0
 	if podMetrics.NetworkRxErrors > 0 || podMetrics.NetworkTxErrors > 0 {
 		// Calculate errors per second based on collection interval
-		collectionIntervalSec := config.DefaultCollectionInterval.Seconds()
+		collectionIntervalSec := config.GetCollectionInterval().Seconds()
 		if collectionIntervalSec > 0 {
 			errorRate = float64(podMetrics.NetworkRxErrors+podMetrics.NetworkTxErrors) / collectionIntervalSec
 		} else {
@@ -237,13 +237,12 @@ func (c *MLClient) Predict(ctx context.Context, podMetrics *metrics.PodMetrics) 
 		latencyMs = 500
 	}
 
-	// Calculate network per CPU ratio with explicit division by zero check
+	// Calculate network per CPU ratio
+	// Since CPUUtilization is always >= 0, adding 1 ensures denominator > 0
 	networkPerCPU := 0.0
-	if podMetrics.CPUUtilization > 0 {
+	if podMetrics.CPUUtilization >= 0 {
 		denominator := podMetrics.CPUUtilization + 1
-		if denominator > 0 {
-			networkPerCPU = networkBytesSec / denominator
-		}
+		networkPerCPU = networkBytesSec / denominator
 	}
 
 	features := map[string]float64{

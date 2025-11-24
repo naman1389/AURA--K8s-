@@ -66,21 +66,36 @@ type ActionState struct {
 }
 
 type Remediator struct {
-	k8sClient  *k8s.Client
-	db         *storage.PostgresDB
-	mcpURL     string
-	executor   *RemediationExecutor
-	dryRun     bool
-	httpClient *http.Client // Reusable HTTP client for MCP calls
+	k8sClient         *k8s.Client
+	db                *storage.PostgresDB
+	mcpURL            string
+	executor          *RemediationExecutor
+	dryRun            bool
+	httpClient        *http.Client // Reusable HTTP client for MCP calls
+	rollbackMgr       *RollbackManager
+	safetyChecker     *RemediationSafetyChecker
+	costCalculator    *CostCalculator
+	costPlanner       *CostOptimizedPlanner
+	preventiveRemed   *PreventiveRemediator
+	preventiveEnabled bool
 }
 
 func NewRemediator(k8sClient *k8s.Client, db *storage.PostgresDB, mcpURL string) *Remediator {
+	costCalculator := NewCostCalculator()
+	preventiveEnv := os.Getenv("ENABLE_PREVENTIVE_REMEDIATION")
+	preventiveEnabled := preventiveEnv == "" || preventiveEnv == "true"
 	return &Remediator{
-		k8sClient: k8sClient,
-		db:        db,
-		mcpURL:    mcpURL,
-		executor:  NewRemediationExecutor(k8sClient),
-		dryRun:    false,
+		k8sClient:         k8sClient,
+		db:                db,
+		mcpURL:            mcpURL,
+		executor:          NewRemediationExecutor(k8sClient),
+		dryRun:            false,
+		rollbackMgr:       NewRollbackManager(),
+		safetyChecker:     NewRemediationSafetyChecker(k8sClient),
+		costCalculator:    costCalculator,
+		costPlanner:       NewCostOptimizedPlanner(costCalculator),
+		preventiveRemed:   NewPreventiveRemediator(k8sClient),
+		preventiveEnabled: preventiveEnabled,
 		httpClient: &http.Client{
 			Timeout: config.GetMCPTimeout(),
 			Transport: &http.Transport{
@@ -95,6 +110,9 @@ func NewRemediator(k8sClient *k8s.Client, db *storage.PostgresDB, mcpURL string)
 func (r *Remediator) SetDryRun(dryRun bool) {
 	r.dryRun = dryRun
 	r.executor.SetDryRun(dryRun)
+	if r.preventiveRemed != nil {
+		r.preventiveRemed.SetDryRun(dryRun)
+	}
 }
 
 func (r *Remediator) ProcessRemediations(ctx context.Context) error {
@@ -201,6 +219,89 @@ func (r *Remediator) ProcessRemediations(ctx context.Context) error {
 	return nil
 }
 
+// ProcessPreventiveRemediations processes early warnings and executes preventive actions
+func (r *Remediator) ProcessPreventiveRemediations(ctx context.Context) error {
+	if !r.preventiveEnabled {
+		return nil // Preventive remediation disabled
+	}
+
+	start := time.Now()
+	defer func() {
+		duration := time.Since(start)
+		metrics.RecordRemediationDuration(duration)
+	}()
+
+	utils.Log.Info("🔮 Processing preventive remediations")
+
+	// Get recent early warnings
+	warnings, err := r.db.GetRecentWarnings(ctx, 100)
+	if err != nil {
+		return fmt.Errorf("failed to get early warnings: %w", err)
+	}
+
+	if len(warnings) == 0 {
+		utils.Log.Info("📋 No early warnings to process")
+		return nil
+	}
+
+	utils.Log.Infof("📋 Found %d early warnings to process", len(warnings))
+
+	successCount := 0
+	failureCount := 0
+
+	for _, warning := range warnings {
+		// Only process high-severity warnings (Critical and High)
+		// Medium and Low severity warnings are monitored but not acted upon automatically
+		if warning.Severity != "Critical" && warning.Severity != "High" {
+			utils.Log.WithFields(map[string]interface{}{
+				"pod":       warning.PodName,
+				"namespace": warning.Namespace,
+				"severity":  warning.Severity,
+			}).Debug("Skipping preventive action for low-severity warning (monitoring only)")
+			continue
+		}
+
+		// Check if warning is still valid (not expired)
+		if warning.TimeToAnomaly > 0 && warning.TimeToAnomaly < 30*time.Second {
+			utils.Log.WithFields(map[string]interface{}{
+				"pod":             warning.PodName,
+				"namespace":       warning.Namespace,
+				"time_to_anomaly": warning.TimeToAnomaly,
+			}).Warn("Warning time-to-anomaly is very short, may be too late for preventive action")
+		}
+
+		// Execute preventive action
+		if err := r.preventiveRemed.ExecutePreventiveAction(ctx, warning); err != nil {
+			utils.Log.WithError(err).WithFields(map[string]interface{}{
+				"pod":       warning.PodName,
+				"namespace": warning.Namespace,
+				"severity":  warning.Severity,
+			}).Error("Failed to execute preventive action")
+			failureCount++
+			metrics.RemediationsTotal.WithLabelValues("preventive_failed").Inc()
+		} else {
+			utils.Log.WithFields(map[string]interface{}{
+				"pod":       warning.PodName,
+				"namespace": warning.Namespace,
+				"severity":  warning.Severity,
+				"action":    warning.RecommendedAction,
+			}).Info("✅ Preventive action executed successfully")
+			successCount++
+			metrics.RemediationsTotal.WithLabelValues("preventive_success").Inc()
+		}
+
+		// Small delay between actions (reduced for faster response)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(500 * time.Millisecond): // Reduced from 1s to 500ms for faster processing
+		}
+	}
+
+	utils.Log.Infof("✅ Preventive remediation complete: %d succeeded, %d failed", successCount, failureCount)
+	return nil
+}
+
 func (r *Remediator) processIssue(ctx context.Context, issue *metrics.Issue) error {
 	utils.Log.WithField("issue_id", issue.ID).Infof("🔧 Processing issue: %s (%s)", issue.Description, issue.IssueType)
 
@@ -252,18 +353,65 @@ func (r *Remediator) processIssue(ctx context.Context, issue *metrics.Issue) err
 			"High-risk remediation requires manual approval or higher confidence", 0)
 	}
 
+	// Run safety checks before execution
+	if r.safetyChecker != nil {
+		for _, action := range plan.Actions {
+			passed, warnings := r.safetyChecker.PreCheck(ctx, action, pod)
+			if !passed {
+				utils.Log.WithField("action", action.Operation).Error("Safety check failed, aborting remediation")
+				return r.recordFailedRemediation(ctx, issue, "safety_check_failed",
+					fmt.Sprintf("Safety check failed for action %s", action.Operation), 0)
+			}
+			if len(warnings) > 0 {
+				utils.Log.WithField("action", action.Operation).Warnf("Safety warnings: %v", warnings)
+			}
+		}
+	}
+
+	// Calculate cost impact
+	var costImpact float64
+	if r.costCalculator != nil {
+		resourceUsage := GetResourceUsageFromPod(pod)
+		for _, action := range plan.Actions {
+			cost := r.costCalculator.CalculateActionCost(
+				action.Type,
+				action.Operation,
+				action.Parameters,
+				resourceUsage,
+				5*time.Minute, // Default duration
+			)
+			costImpact += cost
+		}
+		utils.Log.WithField("cost_impact", costImpact).Info("Calculated remediation cost impact")
+	}
+
 	// Track execution start time for duration calculation
 	executionStart := time.Now()
 	if err := r.executePlan(ctx, issue, pod, plan); err != nil {
 		utils.Log.WithError(err).Error("❌ Failed to execute remediation plan")
 		metrics.RemediationsTotal.WithLabelValues("failed").Inc()
 		executionDuration := time.Since(executionStart)
+
+		// Attempt rollback on failure
+		if r.rollbackMgr != nil {
+			utils.Log.Warn("Attempting rollback due to execution failure")
+			if rollbackErr := r.rollbackMgr.RollbackAll(ctx, r.executor, pod); rollbackErr != nil {
+				utils.Log.WithError(rollbackErr).Error("Rollback failed")
+			}
+		}
+
 		return r.recordFailedRemediation(ctx, issue, "execution_failed", err.Error(), executionDuration)
 	}
 
 	executionDuration := time.Since(executionStart)
 	utils.Log.Infof("✅ Remediation executed successfully in %v", executionDuration)
 	metrics.RemediationsTotal.WithLabelValues("success").Inc()
+
+	// Mark rollback manager as completed
+	if r.rollbackMgr != nil {
+		r.rollbackMgr.MarkCompleted()
+	}
+
 	return r.markIssueResolved(ctx, issue, "remediation_applied", plan.Reasoning, true, executionDuration)
 }
 
@@ -672,14 +820,42 @@ func (r *Remediator) executePlan(ctx context.Context, _ *metrics.Issue, pod *cor
 
 		utils.Log.Infof("⚡ Executing action %d: %s on %s", action.Order, action.Operation, action.Target)
 
+		// Record action state before execution for rollback
+		var actionState map[string]interface{}
+		if r.rollbackMgr != nil {
+			// Capture current state
+			actionState = make(map[string]interface{})
+			if pod != nil {
+				actionState["pod_name"] = pod.Name
+				actionState["pod_namespace"] = pod.Namespace
+			}
+		}
+
 		if err := r.executor.ExecuteAction(ctx, pod, action); err != nil {
 			utils.Log.WithError(err).Errorf("Action %d failed, attempting rollback", action.Order)
+			// Record failed action
+			if r.rollbackMgr != nil {
+				r.rollbackMgr.RecordAction(action, false, err, actionState)
+			}
 			// Attempt rollback of previously executed actions
-			rollbackErr := r.rollbackActions(ctx, pod, executedActions)
-			if rollbackErr != nil {
-				utils.Log.WithError(rollbackErr).Error("Rollback failed - system may be in inconsistent state")
+			if r.rollbackMgr != nil {
+				rollbackErr := r.rollbackMgr.RollbackAll(ctx, r.executor, pod)
+				if rollbackErr != nil {
+					utils.Log.WithError(rollbackErr).Error("Rollback failed - system may be in inconsistent state")
+				}
+			} else {
+				// Fallback to old rollback method
+				rollbackErr := r.rollbackActions(ctx, pod, executedActions)
+				if rollbackErr != nil {
+					utils.Log.WithError(rollbackErr).Error("Rollback failed - system may be in inconsistent state")
+				}
 			}
 			return fmt.Errorf("action %d failed: %w", action.Order, err)
+		}
+
+		// Record successful action
+		if r.rollbackMgr != nil {
+			r.rollbackMgr.RecordAction(action, true, nil, actionState)
 		}
 
 		// Mark action as executed
@@ -1293,7 +1469,7 @@ func (r *Remediator) markIssueResolved(ctx context.Context, issue *metrics.Issue
 
 	// Set executed_at and completed_at with actual execution duration
 	executedAt := time.Now().Add(-executionDuration) // Start time
-	completedAt := time.Now() // End time (executed_at + duration)
+	completedAt := time.Now()                        // End time (executed_at + duration)
 
 	// Generate UUID using Go's uuid package instead of PostgreSQL gen_random_uuid()
 	// This avoids dependency on pgcrypto extension
@@ -1324,7 +1500,7 @@ func (r *Remediator) markIssueResolved(ctx context.Context, issue *metrics.Issue
 
 func (r *Remediator) recordFailedRemediation(ctx context.Context, issue *metrics.Issue, action, errorMsg string, executionDuration time.Duration) error {
 	executedAt := time.Now().Add(-executionDuration) // Start time
-	completedAt := time.Now() // End time (even for failures, track when it completed)
+	completedAt := time.Now()                        // End time (even for failures, track when it completed)
 	success := false
 
 	// Generate UUID using Go's uuid package instead of PostgreSQL gen_random_uuid()

@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	_ "github.com/lib/pq"
+	"github.com/lib/pq"
 	"github.com/namansh70747/aura-k8s/pkg/config"
 	"github.com/namansh70747/aura-k8s/pkg/errors"
 	"github.com/namansh70747/aura-k8s/pkg/metrics"
@@ -80,7 +80,16 @@ func NewPostgresDB(connStr string) (*PostgresDB, error) {
 		"conn_max_idle_time": connMaxIdleTime,
 	}).Info("Connected to PostgreSQL database with connection pool configured")
 
-	return &PostgresDB{db: db}, nil
+	pgdb := &PostgresDB{db: db}
+
+	// Initialize prepared statements for better performance
+	stmtCtx, stmtCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer stmtCancel()
+	if err := InitPreparedStatements(stmtCtx, db); err != nil {
+		utils.Log.WithError(err).Warn("Failed to initialize prepared statements, using regular queries")
+	}
+
+	return pgdb, nil
 }
 
 // InitSchema initializes the database schema with TimescaleDB optimizations
@@ -123,68 +132,62 @@ func (p *PostgresDB) InitSchema(ctx context.Context) error {
 	// Execute schema - ignore errors for existing objects (idempotent)
 	_, err = tx.ExecContext(ctx, schema)
 	if err != nil {
-		// More robust error classification using PostgreSQL error codes
-		errStr := err.Error()
-
-		// Check for PostgreSQL error codes (more reliable than string matching)
-		pgErr, isPgErr := err.(interface {
-			Code() string
-			Severity() string
-		})
-
-		// Acceptable error patterns (case-insensitive)
-		acceptableErrorPatterns := []string{
-			"is not empty", "already exists", "already a hypertable", "does not exist",
-			"cannot drop columns from view", "dependent objects still exist",
-			"duplicate key", "relation already exists", "constraint already exists",
-			"index already exists", "extension already exists",
-		}
-
-		// Check PostgreSQL error codes for common "already exists" scenarios
-		acceptable := false
-		if isPgErr {
-			errorCode := pgErr.Code()
-			// PostgreSQL error codes for "already exists" scenarios
-			acceptableCodes := []string{
-				"42P07", // duplicate_table
-				"42710", // duplicate_object
-				"42P16", // invalid_table_definition (may occur with existing objects)
-				"23505", // unique_violation (for unique constraints/indexes)
+		// Use proper PostgreSQL error type checking
+		if pgErr, ok := err.(*pq.Error); ok {
+			// Check PostgreSQL error codes for common "already exists" scenarios
+			acceptableCodes := map[string]bool{
+				"42P07": true, // duplicate_table
+				"42710": true, // duplicate_object
+				"42P16": true, // invalid_table_definition (may occur with existing objects)
+				"23505": true, // unique_violation (for unique constraints/indexes)
 			}
-			for _, code := range acceptableCodes {
-				if errorCode == code {
-					acceptable = true
-					break
-				}
-			}
-		}
 
-		// Fallback to string matching if error code check didn't match
-		if !acceptable {
-			errLower := strings.ToLower(errStr)
-			for _, pattern := range acceptableErrorPatterns {
-				if strings.Contains(errLower, strings.ToLower(pattern)) {
-					acceptable = true
-					break
-				}
+			// Convert pq.ErrorCode to string for map lookup
+			errorCode := string(pgErr.Code)
+			if acceptableCodes[errorCode] {
+				// These are acceptable errors for idempotent operations
+				utils.Log.WithError(err).WithFields(map[string]interface{}{
+					"pg_code":   errorCode,
+					"severity":  pgErr.Severity,
+					"message":   pgErr.Message,
+				}).Debug("Schema object already exists (expected for idempotent operations)")
+				// Continue - this is acceptable
+			} else {
+				// Real error - log and fail
+				utils.Log.WithError(err).WithFields(map[string]interface{}{
+					"pg_code":   errorCode,
+					"severity":  pgErr.Severity,
+					"message":   pgErr.Message,
+					"detail":    pgErr.Detail,
+					"hint":      pgErr.Hint,
+				}).Error("Schema initialization error")
+				tx.Rollback()
+				return fmt.Errorf("failed to initialize schema: %w", err)
 			}
-		}
-
-		if acceptable {
-			// These are acceptable errors for idempotent operations
-			utils.Log.WithError(err).Debug("Some schema objects already exist (expected for idempotent operations)")
 		} else {
-			// Log the actual error with more context for debugging
-			errorDetails := map[string]interface{}{
-				"error": errStr,
+			// Non-PostgreSQL error - check for common string patterns as fallback
+			errStr := strings.ToLower(err.Error())
+			acceptablePatterns := []string{
+				"already exists", "already a hypertable", "does not exist",
+				"duplicate key", "relation already exists", "constraint already exists",
+				"index already exists", "extension already exists",
 			}
-			if isPgErr {
-				errorDetails["pg_code"] = pgErr.Code()
-				errorDetails["severity"] = pgErr.Severity()
+
+			acceptable := false
+			for _, pattern := range acceptablePatterns {
+				if strings.Contains(errStr, pattern) {
+					acceptable = true
+					utils.Log.WithError(err).Debug("Schema object already exists (string pattern match)")
+					break
+				}
 			}
-			utils.Log.WithFields(errorDetails).Error("Schema initialization error (not in acceptable list)")
-			tx.Rollback()
-			return fmt.Errorf("failed to initialize schema: %w", err)
+
+			if !acceptable {
+				// Real error
+				utils.Log.WithError(err).Error("Schema initialization error (non-PostgreSQL error)")
+				tx.Rollback()
+				return fmt.Errorf("failed to initialize schema: %w", err)
+			}
 		}
 	}
 
@@ -453,6 +456,29 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_issues_unique_open
 ON issues(pod_name, namespace, issue_type) 
 WHERE status IN ('Open', 'open', 'InProgress', 'in_progress');
 
+-- Early warnings table (for predictive anomaly detection)
+CREATE TABLE IF NOT EXISTS early_warnings (
+	id TEXT PRIMARY KEY,
+	pod_name TEXT NOT NULL,
+	namespace TEXT NOT NULL,
+	warning_type TEXT NOT NULL,
+	severity TEXT NOT NULL,
+	risk_score DOUBLE PRECISION NOT NULL,
+	time_to_anomaly_seconds INTEGER,
+	confidence DOUBLE PRECISION,
+	recommended_action TEXT,
+	predicted_metrics JSONB,
+	created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+	expires_at TIMESTAMPTZ,
+	acknowledged BOOLEAN DEFAULT FALSE,
+	acknowledged_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_early_warnings_pod ON early_warnings(pod_name, namespace, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_early_warnings_severity ON early_warnings(severity, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_early_warnings_type ON early_warnings(warning_type, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_early_warnings_active ON early_warnings(created_at DESC) WHERE expires_at IS NULL;
+
 -- Remediations table
 CREATE TABLE IF NOT EXISTS remediations (
 	id TEXT PRIMARY KEY,
@@ -572,7 +598,72 @@ BEGIN
 			RAISE NOTICE 'Continuous aggregate creation skipped: %', SQLERRM;
 		END;
 	END IF;
+	
+	-- Create additional continuous aggregates for common queries
+	IF NOT EXISTS (
+		SELECT 1 FROM timescaledb_information.continuous_aggregates 
+		WHERE view_name = 'pod_metrics_5min'
+	) THEN
+		BEGIN
+			CREATE MATERIALIZED VIEW pod_metrics_5min
+			WITH (timescaledb.continuous) AS
+			SELECT
+				time_bucket('5 minutes', timestamp) AS bucket,
+				pod_name,
+				namespace,
+				AVG(cpu_utilization) AS avg_cpu,
+				AVG(memory_utilization) AS avg_memory,
+				MAX(cpu_utilization) AS max_cpu,
+				MAX(memory_utilization) AS max_memory
+			FROM pod_metrics
+			GROUP BY bucket, pod_name, namespace
+			WITH NO DATA;
+
+			SELECT add_continuous_aggregate_policy('pod_metrics_5min',
+				start_offset => INTERVAL '1 hour',
+				end_offset => INTERVAL '5 minutes',
+				schedule_interval => INTERVAL '5 minutes',
+				if_not_exists => TRUE);
+		EXCEPTION WHEN OTHERS THEN
+			RAISE NOTICE 'Continuous aggregate pod_metrics_5min creation skipped: %', SQLERRM;
+		END;
+	END IF;
+	
+	-- Create continuous aggregate for ML predictions
+	IF NOT EXISTS (
+		SELECT 1 FROM timescaledb_information.continuous_aggregates 
+		WHERE view_name = 'ml_predictions_5min'
+	) THEN
+		BEGIN
+			CREATE MATERIALIZED VIEW ml_predictions_5min
+			WITH (timescaledb.continuous) AS
+			SELECT
+				time_bucket('5 minutes', timestamp) AS bucket,
+				pod_name,
+				namespace,
+				AVG(confidence) AS avg_confidence,
+				COUNT(*) FILTER (WHERE is_anomaly = 1) AS anomaly_count,
+				COUNT(*) AS total_predictions
+			FROM ml_predictions
+			GROUP BY bucket, pod_name, namespace
+			WITH NO DATA;
+
+			SELECT add_continuous_aggregate_policy('ml_predictions_5min',
+				start_offset => INTERVAL '1 hour',
+				end_offset => INTERVAL '5 minutes',
+				schedule_interval => INTERVAL '5 minutes',
+				if_not_exists => TRUE);
+		EXCEPTION WHEN OTHERS THEN
+			RAISE NOTICE 'Continuous aggregate ml_predictions_5min creation skipped: %', SQLERRM;
+		END;
+	END IF;
 END $$;
+
+-- Additional indexes for common query patterns
+CREATE INDEX IF NOT EXISTS idx_pod_metrics_cpu_memory ON pod_metrics(cpu_utilization, memory_utilization) WHERE cpu_utilization > 80 OR memory_utilization > 80;
+CREATE INDEX IF NOT EXISTS idx_ml_predictions_confidence ON ml_predictions(confidence DESC) WHERE confidence > 0.5;
+CREATE INDEX IF NOT EXISTS idx_ml_predictions_anomaly_time ON ml_predictions(is_anomaly, timestamp DESC) WHERE is_anomaly = 1;
+CREATE INDEX IF NOT EXISTS idx_remediations_success_time ON remediations(success, executed_at DESC) WHERE success = true;
 
 -- Views for Grafana
 CREATE OR REPLACE VIEW predictions AS 
@@ -828,6 +919,9 @@ CREATE TABLE IF NOT EXISTS ml_predictions (
 CREATE INDEX IF NOT EXISTS idx_ml_predictions_timestamp ON ml_predictions(timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_ml_predictions_pod ON ml_predictions(pod_name, namespace);
 CREATE INDEX IF NOT EXISTS idx_ml_predictions_issue ON ml_predictions(predicted_issue, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_ml_predictions_confidence ON ml_predictions(confidence DESC) WHERE confidence > 0.5;
+CREATE INDEX IF NOT EXISTS idx_ml_predictions_anomaly_time ON ml_predictions(is_anomaly, timestamp DESC) WHERE is_anomaly = 1;
+CREATE INDEX IF NOT EXISTS idx_pod_metrics_cpu_memory ON pod_metrics(cpu_utilization, memory_utilization) WHERE cpu_utilization > 80 OR memory_utilization > 80;
 
 -- Issues table
 CREATE TABLE IF NOT EXISTS issues (
@@ -855,6 +949,29 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_issues_unique_open
 ON issues(pod_name, namespace, issue_type) 
 WHERE status IN ('Open', 'open', 'InProgress', 'in_progress');
 
+-- Early warnings table (for predictive anomaly detection)
+CREATE TABLE IF NOT EXISTS early_warnings (
+	id TEXT PRIMARY KEY,
+	pod_name TEXT NOT NULL,
+	namespace TEXT NOT NULL,
+	warning_type TEXT NOT NULL,
+	severity TEXT NOT NULL,
+	risk_score DOUBLE PRECISION NOT NULL,
+	time_to_anomaly_seconds INTEGER,
+	confidence DOUBLE PRECISION,
+	recommended_action TEXT,
+	predicted_metrics JSONB,
+	created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+	expires_at TIMESTAMPTZ,
+	acknowledged BOOLEAN DEFAULT FALSE,
+	acknowledged_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_early_warnings_pod ON early_warnings(pod_name, namespace, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_early_warnings_severity ON early_warnings(severity, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_early_warnings_type ON early_warnings(warning_type, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_early_warnings_active ON early_warnings(created_at DESC) WHERE expires_at IS NULL;
+
 -- Remediations table
 CREATE TABLE IF NOT EXISTS remediations (
 	id TEXT PRIMARY KEY,
@@ -876,6 +993,7 @@ CREATE TABLE IF NOT EXISTS remediations (
 CREATE INDEX IF NOT EXISTS idx_remediations_issue ON remediations(issue_id);
 CREATE INDEX IF NOT EXISTS idx_remediations_pod ON remediations(pod_name, namespace, executed_at DESC);
 CREATE INDEX IF NOT EXISTS idx_remediations_timestamp ON remediations(timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_remediations_success_time ON remediations(success, executed_at DESC) WHERE success = true;
 
 -- Metrics + predictions views for Grafana
 CREATE OR REPLACE VIEW metrics AS 
@@ -1233,14 +1351,28 @@ func (p *PostgresDB) GetOpenIssues(ctx context.Context) ([]*metrics.Issue, error
 		issue := &metrics.Issue{}
 		var predictedTimeHorizon sql.NullInt64
 		var rootCause sql.NullString
+		var description sql.NullString
+		var resolvedAt sql.NullTime
 		err := rows.Scan(
 			&issue.ID, &issue.PodName, &issue.Namespace, &issue.IssueType,
-			&issue.Severity, &issue.Description, &issue.CreatedAt, &issue.ResolvedAt,
+			&issue.Severity, &description, &issue.CreatedAt, &resolvedAt,
 			&issue.Status, &issue.Confidence, &predictedTimeHorizon, &rootCause,
 		)
 		if err != nil {
 			return nil, errors.New(errors.ErrCodeDatabaseQuery, "failed to scan issue row").
 				WithCause(err)
+		}
+
+		// Handle NULL values
+		if description.Valid {
+			issue.Description = description.String
+		} else {
+			issue.Description = ""
+		}
+		if resolvedAt.Valid {
+			issue.ResolvedAt = &resolvedAt.Time
+		} else {
+			issue.ResolvedAt = nil
 		}
 		if predictedTimeHorizon.Valid {
 			// Safe array indexing with null check
@@ -1368,6 +1500,195 @@ func (p *PostgresDB) SaveMLPrediction(ctx context.Context, pred *metrics.MLPredi
 			WithCause(execErr)
 	}
 	return nil
+}
+
+// SaveEarlyWarning saves an early warning to the database
+func (p *PostgresDB) SaveEarlyWarning(ctx context.Context, warning *metrics.EarlyWarning) error {
+	if warning == nil {
+		return fmt.Errorf("warning cannot be nil")
+	}
+
+	// Generate ID if not set
+	warningID := uuid.New().String()
+
+	// Marshal predicted metrics to JSON
+	predictedMetricsJSON, err := json.Marshal(warning.PredictedMetrics)
+	if err != nil {
+		return fmt.Errorf("failed to marshal predicted metrics: %w", err)
+	}
+
+	// Calculate expiration time (default: 1 hour from now)
+	expiresAt := time.Now().Add(1 * time.Hour)
+	if warning.TimeToAnomaly > 0 {
+		// Set expiration to time_to_anomaly + buffer
+		expiresAt = time.Now().Add(warning.TimeToAnomaly + 5*time.Minute)
+	}
+
+	timeToAnomalySeconds := int(warning.TimeToAnomaly.Seconds())
+
+	query := `
+	INSERT INTO early_warnings (
+		id, pod_name, namespace, warning_type, severity, risk_score,
+		time_to_anomaly_seconds, confidence, recommended_action,
+		predicted_metrics, created_at, expires_at
+	) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+	ON CONFLICT (id) DO UPDATE SET
+		risk_score = EXCLUDED.risk_score,
+		time_to_anomaly_seconds = EXCLUDED.time_to_anomaly_seconds,
+		confidence = EXCLUDED.confidence,
+		recommended_action = EXCLUDED.recommended_action,
+		predicted_metrics = EXCLUDED.predicted_metrics,
+		expires_at = EXCLUDED.expires_at
+	`
+
+	_, execErr := p.db.ExecContext(ctx, query,
+		warningID, warning.PodName, warning.Namespace, warning.WarningType, warning.Severity,
+		warning.RiskScore, timeToAnomalySeconds, warning.Confidence, warning.RecommendedAction,
+		predictedMetricsJSON, warning.CreatedAt, expiresAt,
+	)
+
+	if execErr != nil {
+		return errors.New(errors.ErrCodeDatabaseQuery, "failed to save early warning").
+			WithDetail("pod_name", warning.PodName).
+			WithDetail("namespace", warning.Namespace).
+			WithDetail("warning_type", warning.WarningType).
+			WithCause(execErr)
+	}
+	return nil
+}
+
+// GetRecentWarnings returns recent early warnings
+func (p *PostgresDB) GetRecentWarnings(ctx context.Context, limit int) ([]*metrics.EarlyWarning, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+
+	query := `
+	SELECT id, pod_name, namespace, warning_type, severity, risk_score,
+		time_to_anomaly_seconds, confidence, recommended_action,
+		predicted_metrics, created_at, expires_at, acknowledged
+	FROM early_warnings
+	WHERE (expires_at IS NULL OR expires_at > NOW())
+		AND (acknowledged IS NULL OR acknowledged = FALSE)
+	ORDER BY created_at DESC
+	LIMIT $1
+	`
+
+	rows, err := p.db.QueryContext(ctx, query, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query recent warnings: %w", err)
+	}
+	defer rows.Close()
+
+	var warnings []*metrics.EarlyWarning
+	for rows.Next() {
+		var w metrics.EarlyWarning
+		var warningID string
+		var timeToAnomalySeconds sql.NullInt64
+		var predictedMetricsJSON []byte
+		var expiresAt sql.NullTime
+		var acknowledged sql.NullBool
+
+		err := rows.Scan(
+			&warningID, &w.PodName, &w.Namespace, &w.WarningType, &w.Severity, &w.RiskScore,
+			&timeToAnomalySeconds, &w.Confidence, &w.RecommendedAction,
+			&predictedMetricsJSON, &w.CreatedAt, &expiresAt, &acknowledged,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan warning: %w", err)
+		}
+
+		if timeToAnomalySeconds.Valid {
+			w.TimeToAnomaly = time.Duration(timeToAnomalySeconds.Int64) * time.Second
+		}
+
+		if len(predictedMetricsJSON) > 0 {
+			if err := json.Unmarshal(predictedMetricsJSON, &w.PredictedMetrics); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal predicted metrics: %w", err)
+			}
+		}
+
+		warnings = append(warnings, &w)
+	}
+
+	return warnings, rows.Err()
+}
+
+// CleanupExpiredWarnings removes expired warnings from the database
+func (p *PostgresDB) CleanupExpiredWarnings(ctx context.Context) (int64, error) {
+	query := `
+	DELETE FROM early_warnings
+	WHERE expires_at IS NOT NULL AND expires_at < NOW()
+	`
+	
+	result, err := p.db.ExecContext(ctx, query)
+	if err != nil {
+		return 0, fmt.Errorf("failed to cleanup expired warnings: %w", err)
+	}
+	
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get rows affected: %w", err)
+	}
+	
+	return rowsAffected, nil
+}
+
+// GetWarningsByPod returns warnings for a specific pod
+func (p *PostgresDB) GetWarningsByPod(ctx context.Context, podName, namespace string, limit int) ([]*metrics.EarlyWarning, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+
+	query := `
+	SELECT id, pod_name, namespace, warning_type, severity, risk_score,
+		time_to_anomaly_seconds, confidence, recommended_action,
+		predicted_metrics, created_at, expires_at, acknowledged
+	FROM early_warnings
+	WHERE pod_name = $1 AND namespace = $2
+		AND (expires_at IS NULL OR expires_at > NOW())
+	ORDER BY created_at DESC
+	LIMIT $3
+	`
+
+	rows, err := p.db.QueryContext(ctx, query, podName, namespace, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query warnings by pod: %w", err)
+	}
+	defer rows.Close()
+
+	var warnings []*metrics.EarlyWarning
+	for rows.Next() {
+		var w metrics.EarlyWarning
+		var warningID string
+		var timeToAnomalySeconds sql.NullInt64
+		var predictedMetricsJSON []byte
+		var expiresAt sql.NullTime
+		var acknowledged sql.NullBool
+
+		err := rows.Scan(
+			&warningID, &w.PodName, &w.Namespace, &w.WarningType, &w.Severity, &w.RiskScore,
+			&timeToAnomalySeconds, &w.Confidence, &w.RecommendedAction,
+			&predictedMetricsJSON, &w.CreatedAt, &expiresAt, &acknowledged,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan warning: %w", err)
+		}
+
+		if timeToAnomalySeconds.Valid {
+			w.TimeToAnomaly = time.Duration(timeToAnomalySeconds.Int64) * time.Second
+		}
+
+		if len(predictedMetricsJSON) > 0 {
+			if err := json.Unmarshal(predictedMetricsJSON, &w.PredictedMetrics); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal predicted metrics: %w", err)
+			}
+		}
+
+		warnings = append(warnings, &w)
+	}
+
+	return warnings, rows.Err()
 }
 
 // SavePodMetricsBatch saves multiple pod metrics in a single transaction for better performance
