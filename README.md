@@ -15,12 +15,16 @@ AURA K8s is an enterprise-ready Kubernetes monitoring and auto-remediation platf
 ### Key Features
 
 - **🤖 Advanced ML Detection**: 96.7% accuracy using ensemble models (XGBoost, Random Forest, LightGBM, Gradient Boosting)
+- **🔮 Predictive Anomaly Detection**: Forecast anomalies before they occur with 5-15 minute prediction horizon
+- **⚠️ Early Warning System**: Risk scoring, severity classification, and time-to-anomaly estimation
+- **🛡️ Preventive Remediation**: Proactive actions to prevent issues (scale-up, resource increase, load balancing)
 - **🔄 Intelligent Auto-Remediation**: 15+ remediation strategies for common Kubernetes issues
 - **💾 Time-Series Optimization**: TimescaleDB for efficient metrics storage and querying
 - **🧠 AI-Powered Insights**: Ollama integration for intelligent remediation recommendations
 - **☸️ Native K8s Integration**: Works seamlessly with any Kubernetes cluster
-- **📊 Real-Time Monitoring**: Continuous metrics collection and analysis
+- **📊 Real-Time Monitoring**: Ultra-fast 500ms collection intervals with streaming infrastructure
 - **💰 Cost Optimization**: Automatic resource rightsizing recommendations
+- **⚡ High Performance**: Sub-second latency with multi-level caching
 
 ---
 
@@ -45,12 +49,14 @@ AURA K8s is an enterprise-ready Kubernetes monitoring and auto-remediation platf
 
 ### Components
 
-- **Collector** (Go): Gathers pod/node metrics every 15s
-- **ML Service** (Python/FastAPI): Ensemble prediction engine
+- **Collector** (Go): Gathers pod/node metrics every 500ms with streaming infrastructure
+- **ML Service** (Python/FastAPI): Ensemble prediction engine with forecasting capabilities
+- **Predictive Orchestrator** (Python): Coordinates predictive detection and preventive actions
 - **Orchestrator** (Python): Coordinates the prediction pipeline
-- **Remediator** (Go): Executes remediation actions
+- **Remediator** (Go): Executes remediation actions (reactive + preventive)
 - **MCP Server** (Python/FastAPI): AI recommendation engine with Ollama
-- **TimescaleDB**: Optimized time-series database
+- **TimescaleDB**: Optimized time-series database with continuous aggregates
+- **Grafana**: 5 pre-configured dashboards for comprehensive monitoring
 
 ---
 
@@ -73,16 +79,21 @@ git clone https://github.com/namansh70747/AURA--K8s-.git
 cd AURA--K8s-
 
 # Start everything with one command
-python3 aura-cli.py start
+./start.sh
 ```
 
-That's it! The CLI will:
+That's it! The startup script will:
 - ✅ Validate prerequisites
-- ✅ Clean up any conflicting processes
 - ✅ Set up Kind cluster (if needed)
+- ✅ Install metrics-server for Kubernetes metrics
+- ✅ Deploy test pods for metrics collection
+- ✅ Start TimescaleDB and Grafana
 - ✅ Initialize database schema
 - ✅ Train ML models (first time only)
-- ✅ Start all services
+- ✅ Start all services (Collector, Remediator, ML Service, MCP Server, Orchestrators)
+- ✅ Verify real pod metrics collection
+- ✅ Verify ML predictions with model accuracy
+- ✅ Verify Grafana dashboards
 
 **Time**: 2-3 minutes (5-10 minutes first time)
 
@@ -90,35 +101,24 @@ That's it! The CLI will:
 
 ## 📋 CLI Commands
 
-### Using CLI Tool
+### Quick Start
 ```bash
-# Service management
-python3 aura-cli.py start      # Start all services (including Grafana)
-python3 aura-cli.py stop       # Stop all services
-python3 aura-cli.py restart    # Restart all services
+# Start everything
+./start.sh
 
-# Monitoring
-python3 aura-cli.py status     # Check service health
-python3 aura-cli.py logs       # View recent logs
+# Stop everything
+./stop.sh
 
-# Validation
-python3 aura-cli.py validate   # Run system validation
-python3 aura-cli.py test       # Test end-to-end pipeline
+# Check service health
+curl http://localhost:9090/health  # Collector
+curl http://localhost:9091/health  # Remediator
+curl http://localhost:8001/health # ML Service
+curl http://localhost:8000/health # MCP Server
 
-# Maintenance
-python3 aura-cli.py cleanup    # Clean up ports/processes
-```
-
-### Using Makefile (Recommended)
-```bash
-make help       # Show all available commands
-make start      # Start all services
-make stop       # Stop all services
-make status     # Check service health
-make validate   # Run system validation
-make build      # Build Go binaries
-make train      # Train ML models
-make clean      # Clean build artifacts
+# View logs
+tail -f logs/collector.log
+tail -f logs/remediator.log
+tail -f logs/orchestrator.log
 ```
 
 ---
@@ -285,11 +285,52 @@ AURA--K8s-/
 
 ## 📊 Performance
 
-- **Metrics Collection**: 15-second intervals
+- **Metrics Collection**: 500ms intervals (ultra-fast)
 - **ML Predictions**: 30-second intervals
-- **Remediation**: 30-second polling
+- **Forecasting**: 5-second intervals (predictive mode)
+- **Remediation**: 30-second polling (reactive + preventive)
 - **Database Retention**: 7 days raw data, 30 days predictions
 - **ML Accuracy**: 96.7% average across ensemble
+- **Prediction Latency**: ~50-100ms per pod
+- **Forecast Latency**: <100ms (p95)
+- **Remediation Time**: ~2-5 seconds per action
+
+---
+
+## 🔮 Predictive Anomaly Detection
+
+AURA K8s now includes **predictive anomaly detection** capabilities that forecast anomalies before they occur:
+
+### Features
+
+- **⏱️ Ultra-Fast Collection**: 500ms collection intervals with streaming infrastructure
+- **🔮 Forecasting Engine**: Multi-model ensemble forecasting (LSTM, Prophet, ARIMA)
+- **⚠️ Early Warnings**: Risk scoring, severity classification, and time-to-anomaly estimation
+- **🛡️ Preventive Actions**: Proactive scaling, resource increases, load balancing
+- **📊 Real-Time Processing**: Sub-second latency with in-memory circular buffers
+
+### Usage
+
+```bash
+# Start predictive orchestrator
+python3 scripts/predictive_orchestrator.py
+
+# Verify system
+python3 scripts/verify_grafana.py
+```
+
+### Configuration
+
+```bash
+# Enable predictive features
+export COLLECTION_INTERVAL=500ms
+export USE_STREAMING_COLLECTION=true
+export FORECAST_INTERVAL=5s
+export PREDICTION_HORIZON=900  # 15 minutes
+export ENABLE_PREVENTIVE_REMEDIATION=true
+```
+
+See [docs/PREDICTIVE_IMPLEMENTATION.md](docs/PREDICTIVE_IMPLEMENTATION.md) for complete documentation.
 
 ---
 

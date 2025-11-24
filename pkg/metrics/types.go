@@ -177,3 +177,44 @@ type MLPrediction struct {
 	// Explanation
 	Explanation string `json:"explanation"`
 }
+
+// ForecastResult contains the result of a forecasting operation
+// This is used by the early warning system to generate warnings
+type ForecastResult struct {
+	PredictedValue     float64       // Predicted metric value
+	ConfidenceLower    float64       // Lower bound of confidence interval
+	ConfidenceUpper    float64       // Upper bound of confidence interval
+	AnomalyProbability float64       // Probability that an anomaly will occur (0-1)
+	TimeToAnomaly      time.Duration // Estimated time until anomaly occurs
+	RiskScore          float64       // Risk score (0-100)
+	Severity           string        // Severity level: Critical, High, Medium, Low
+	Confidence         float64       // Overall confidence in the forecast (0-1)
+	Timestamp          time.Time     // When this forecast was made
+}
+
+// AnomalyPrediction contains information about a predicted anomaly
+type AnomalyPrediction struct {
+	WillOccur         bool          // Whether anomaly is predicted to occur
+	AnomalyType       string        // Type of predicted anomaly
+	TimeToAnomaly     time.Duration // Estimated time until anomaly
+	Confidence        float64       // Confidence in prediction (0-1)
+	RiskScore         float64       // Risk score (0-100)
+	Severity          string        // Severity level
+	RecommendedAction string        // Recommended preventive action
+}
+
+// EarlyWarning represents a generated early warning for predictive anomaly detection
+type EarlyWarning struct {
+	ID                string            `json:"id"`
+	PodName           string            `json:"pod_name"`
+	Namespace         string            `json:"namespace"`
+	WarningType       string            `json:"warning_type"`        // e.g., "CPU Spike Predicted", "Memory Leak Detected"
+	Severity          string            `json:"severity"`             // Critical, High, Medium, Low
+	RiskScore         float64           `json:"risk_score"`           // 0-100
+	TimeToAnomaly     time.Duration     `json:"time_to_anomaly"`     // Estimated time until anomaly occurs
+	Confidence        float64           `json:"confidence"`           // Confidence in the prediction (0-1)
+	RecommendedAction string            `json:"recommended_action"`   // e.g., "Scale up deployment", "Increase memory limits"
+	PredictedMetrics  map[string]float64 `json:"predicted_metrics"`  // Key predicted metrics at anomaly time
+	Description       string            `json:"description"`
+	CreatedAt         time.Time         `json:"created_at"`
+}

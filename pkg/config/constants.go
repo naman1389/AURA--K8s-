@@ -57,25 +57,15 @@ func GetMediumConfidenceThreshold() float64 {
 }
 
 // Thresholds for issue detection
-// NOTE: These constants are deprecated. Use the getter functions instead:
-// - GetHighCPUThreshold() instead of HighCPUThreshold
-// - GetHighMemoryThreshold() instead of HighMemoryThreshold
-// - GetMinConfidenceForRemediation() instead of MinConfidenceForRemediation
-// - GetHighConfidenceThreshold() instead of HighConfidenceThreshold
-// - GetMediumConfidenceThreshold() instead of MediumConfidenceThreshold
+// NOTE: All threshold values should be obtained via getter functions:
+// - GetHighCPUThreshold() for CPU threshold
+// - GetHighMemoryThreshold() for memory threshold
+// - GetMinConfidenceForRemediation() for minimum confidence
+// - GetHighConfidenceThreshold() for high confidence
+// - GetMediumConfidenceThreshold() for medium confidence
 //
-// These constants are kept for backward compatibility but should not be used in new code.
+// The constants below are only used as defaults in getter functions.
 const (
-	// CPU thresholds (deprecated)
-	HighCPUThreshold = 80.0 // Percentage - use GetHighCPUThreshold()
-
-	// Memory thresholds (deprecated)
-	HighMemoryThreshold = 80.0 // Percentage - use GetHighMemoryThreshold()
-
-	// Confidence thresholds (deprecated)
-	MinConfidenceForRemediation = 0.5 // Minimum confidence to trigger remediation - use GetMinConfidenceForRemediation()
-	HighConfidenceThreshold     = 0.8 // High confidence threshold - use GetHighConfidenceThreshold()
-	MediumConfidenceThreshold   = 0.6 // Medium confidence threshold - use GetMediumConfidenceThreshold()
 
 	// Retry configuration
 	DefaultMaxRetries      = 3
@@ -84,7 +74,7 @@ const (
 	DefaultShutdownTimeout = 30 * time.Second
 
 	// Intervals
-	DefaultCollectionInterval  = 15 * time.Second
+	DefaultCollectionInterval  = 500 * time.Millisecond
 	DefaultRemediationInterval = 30 * time.Second
 
 	// Connection pool settings

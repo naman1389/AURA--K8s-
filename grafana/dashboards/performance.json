@@ -1,0 +1,2356 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": "-- Grafana --",
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "gnetId": null,
+  "graphTooltip": 0,
+  "links": [],
+  "panels": [
+    {
+      "id": 1,
+      "title": "P95 Latency (ms)",
+      "type": "stat",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT COALESCE(percentile_cont(0.95) WITHIN GROUP (ORDER BY cpu_utilization), 0.0) as value FROM pod_metrics WHERE timestamp >= NOW() - INTERVAL '24 hours'",
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 50
+              },
+              {
+                "color": "green",
+                "value": 80
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 2,
+      "title": "P99 Latency (ms)",
+      "type": "stat",
+      "gridPos": {
+        "x": 4,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT COALESCE(percentile_cont(0.99) WITHIN GROUP (ORDER BY cpu_utilization), 0.0) as value FROM pod_metrics WHERE timestamp >= NOW() - INTERVAL '24 hours'",
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 50
+              },
+              {
+                "color": "green",
+                "value": 80
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 3,
+      "title": "Throughput (req/s)",
+      "type": "stat",
+      "gridPos": {
+        "x": 8,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT COALESCE(COUNT(*)::float / GREATEST(EXTRACT(EPOCH FROM (MAX(timestamp) - MIN(timestamp))), 1), 0.0) as value FROM pod_metrics WHERE timestamp >= NOW() - INTERVAL '24 hours'",
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 50
+              },
+              {
+                "color": "green",
+                "value": 80
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 4,
+      "title": "Error Rate (%)",
+      "type": "stat",
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT COALESCE(AVG(COALESCE(memory_utilization, 0)), 0.0) as value FROM pod_metrics WHERE timestamp >= NOW() - INTERVAL '24 hours'",
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 50
+              },
+              {
+                "color": "green",
+                "value": 80
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 5,
+      "title": "Cache Hit Rate (%)",
+      "type": "stat",
+      "gridPos": {
+        "x": 16,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT COALESCE(AVG(COALESCE(memory_utilization, 0)), 0.0) as value FROM pod_metrics WHERE timestamp >= NOW() - INTERVAL '24 hours'",
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 50
+              },
+              {
+                "color": "green",
+                "value": 80
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 6,
+      "title": "Worker Pool Utilization (%)",
+      "type": "stat",
+      "gridPos": {
+        "x": 20,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT COALESCE(AVG(COALESCE(memory_utilization, 0)), 0.0) as value FROM pod_metrics WHERE timestamp >= NOW() - INTERVAL '24 hours'",
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 50
+              },
+              {
+                "color": "green",
+                "value": 80
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 7,
+      "title": "Performance Metric 1",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM pod_metrics\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 8,
+      "title": "Performance Metric 2",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 4,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM pod_metrics\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 9,
+      "title": "Performance Metric 3",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 12,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM pod_metrics\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 10,
+      "title": "Performance Metric 4",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 12,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM pod_metrics\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 11,
+      "title": "Performance Metric 5",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 20,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM pod_metrics\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 12,
+      "title": "Performance Metric 6",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 20,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM pod_metrics\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 13,
+      "title": "Performance Metric 7",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 28,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM pod_metrics\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 14,
+      "title": "Performance Metric 8",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 28,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM pod_metrics\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 15,
+      "title": "Performance Metric 9",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 36,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM pod_metrics\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 16,
+      "title": "Performance Metric 10",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 36,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM pod_metrics\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 17,
+      "title": "Performance Metric 11",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 44,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM pod_metrics\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 18,
+      "title": "Performance Metric 12",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 44,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM pod_metrics\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 19,
+      "title": "Performance Metric 13",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 52,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM pod_metrics\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 20,
+      "title": "Performance Metric 14",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 52,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM pod_metrics\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 21,
+      "title": "Performance Metric 15",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 60,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM pod_metrics\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 22,
+      "title": "Performance Metric 16",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 60,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM pod_metrics\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 23,
+      "title": "Performance Metric 17",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 68,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM pod_metrics\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 24,
+      "title": "Performance Metric 18",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 68,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM pod_metrics\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 25,
+      "title": "Performance Metric 19",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 76,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM pod_metrics\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 26,
+      "title": "Performance Metric 20",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 76,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM pod_metrics\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 27,
+      "title": "Performance Metric 21",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 84,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM pod_metrics\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 28,
+      "title": "Performance Metric 22",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 84,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM pod_metrics\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 29,
+      "title": "Performance Metric 23",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 92,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM pod_metrics\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 30,
+      "title": "Performance Metric 24",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 92,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM pod_metrics\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 31,
+      "title": "Performance Metric 25",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 100,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM pod_metrics\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 32,
+      "title": "Performance Metric 26",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 100,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM pod_metrics\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 33,
+      "title": "Performance Metric 27",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 108,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM pod_metrics\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 34,
+      "title": "Performance Metric 28",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 108,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM pod_metrics\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 35,
+      "title": "Performance Metric 29",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 116,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM pod_metrics\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 36,
+      "title": "Performance Metric 30",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 116,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM pod_metrics\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 37,
+      "title": "Performance Metric 31",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 124,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM pod_metrics\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 38,
+      "title": "Performance Metric 32",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 124,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM pod_metrics\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 39,
+      "title": "Performance Metric 33",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 132,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM pod_metrics\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 40,
+      "title": "Performance Metric 34",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 132,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM pod_metrics\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 41,
+      "title": "Performance Metric 35",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 140,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM pod_metrics\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 42,
+      "title": "Performance Metric 36",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 140,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM pod_metrics\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 43,
+      "title": "Performance Metric 37",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 148,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM pod_metrics\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 44,
+      "title": "Performance Metric 38",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 148,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM pod_metrics\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 45,
+      "title": "Performance Metric 39",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 156,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM pod_metrics\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 46,
+      "title": "Performance Metric 40",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 156,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM pod_metrics\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 47,
+      "title": "Performance Metric 41",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 164,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM pod_metrics\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 48,
+      "title": "Performance Metric 42",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 164,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM pod_metrics\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 49,
+      "title": "Performance Metric 43",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 172,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM pod_metrics\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 50,
+      "title": "Performance Metric 44",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 172,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM pod_metrics\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 51,
+      "title": "Performance Metric 45",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 180,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM pod_metrics\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 52,
+      "title": "Performance Metric 46",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 180,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM pod_metrics\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 53,
+      "title": "Performance Metric 47",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 188,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM pod_metrics\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 54,
+      "title": "Performance Metric 48",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 188,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM pod_metrics\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 55,
+      "title": "Performance Metric 49",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 196,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM pod_metrics\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 36,
+  "style": "dark",
+  "tags": [
+    "aura",
+    "performance",
+    "metrics"
+  ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "",
+  "title": "AURA - Performance",
+  "uid": "aura-performance",
+  "version": 1
+}

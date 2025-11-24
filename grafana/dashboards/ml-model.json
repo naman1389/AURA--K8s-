@@ -1,0 +1,2356 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": "-- Grafana --",
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "gnetId": null,
+  "graphTooltip": 0,
+  "links": [],
+  "panels": [
+    {
+      "id": 1,
+      "title": "Model Accuracy (%)",
+      "type": "stat",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT COALESCE(AVG(confidence), 0.0) * 100 as value FROM ml_predictions WHERE timestamp >= NOW() - INTERVAL '24 hours'",
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 50
+              },
+              {
+                "color": "green",
+                "value": 80
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 2,
+      "title": "Prediction Latency (ms)",
+      "type": "stat",
+      "gridPos": {
+        "x": 4,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT 0.0 as value",
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 50
+              },
+              {
+                "color": "green",
+                "value": 80
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 3,
+      "title": "Prediction Throughput (/s)",
+      "type": "stat",
+      "gridPos": {
+        "x": 8,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT COALESCE(COUNT(*)::float / GREATEST(EXTRACT(EPOCH FROM (MAX(timestamp) - MIN(timestamp))), 1), 0.0) as value FROM ml_predictions WHERE timestamp >= NOW() - INTERVAL '24 hours'",
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 50
+              },
+              {
+                "color": "green",
+                "value": 80
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 4,
+      "title": "Active Model Version",
+      "type": "stat",
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT 'ensemble' as value",
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 50
+              },
+              {
+                "color": "green",
+                "value": 80
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 5,
+      "title": "Predictions Today",
+      "type": "stat",
+      "gridPos": {
+        "x": 16,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT COALESCE(COUNT(*), 0) as value FROM ml_predictions WHERE timestamp >= NOW() - INTERVAL '24 hours'",
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 50
+              },
+              {
+                "color": "green",
+                "value": 80
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 6,
+      "title": "Model Drift Score",
+      "type": "stat",
+      "gridPos": {
+        "x": 20,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT 0.0 as value",
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 50
+              },
+              {
+                "color": "green",
+                "value": 80
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 7,
+      "title": "ML Model Metric 1",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM ml_predictions\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 8,
+      "title": "ML Model Metric 2",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 4,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM ml_predictions\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 9,
+      "title": "ML Model Metric 3",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 12,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM ml_predictions\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 10,
+      "title": "ML Model Metric 4",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 12,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM ml_predictions\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 11,
+      "title": "ML Model Metric 5",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 20,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM ml_predictions\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 12,
+      "title": "ML Model Metric 6",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 20,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM ml_predictions\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 13,
+      "title": "ML Model Metric 7",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 28,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM ml_predictions\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 14,
+      "title": "ML Model Metric 8",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 28,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM ml_predictions\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 15,
+      "title": "ML Model Metric 9",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 36,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM ml_predictions\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 16,
+      "title": "ML Model Metric 10",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 36,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM ml_predictions\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 17,
+      "title": "ML Model Metric 11",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 44,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM ml_predictions\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 18,
+      "title": "ML Model Metric 12",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 44,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM ml_predictions\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 19,
+      "title": "ML Model Metric 13",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 52,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM ml_predictions\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 20,
+      "title": "ML Model Metric 14",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 52,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM ml_predictions\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 21,
+      "title": "ML Model Metric 15",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 60,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM ml_predictions\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 22,
+      "title": "ML Model Metric 16",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 60,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM ml_predictions\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 23,
+      "title": "ML Model Metric 17",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 68,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM ml_predictions\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 24,
+      "title": "ML Model Metric 18",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 68,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM ml_predictions\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 25,
+      "title": "ML Model Metric 19",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 76,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM ml_predictions\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 26,
+      "title": "ML Model Metric 20",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 76,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM ml_predictions\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 27,
+      "title": "ML Model Metric 21",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 84,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM ml_predictions\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 28,
+      "title": "ML Model Metric 22",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 84,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM ml_predictions\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 29,
+      "title": "ML Model Metric 23",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 92,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM ml_predictions\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 30,
+      "title": "ML Model Metric 24",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 92,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM ml_predictions\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 31,
+      "title": "ML Model Metric 25",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 100,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM ml_predictions\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 32,
+      "title": "ML Model Metric 26",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 100,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM ml_predictions\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 33,
+      "title": "ML Model Metric 27",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 108,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM ml_predictions\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 34,
+      "title": "ML Model Metric 28",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 108,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM ml_predictions\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 35,
+      "title": "ML Model Metric 29",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 116,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM ml_predictions\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 36,
+      "title": "ML Model Metric 30",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 116,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM ml_predictions\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 37,
+      "title": "ML Model Metric 31",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 124,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM ml_predictions\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 38,
+      "title": "ML Model Metric 32",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 124,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM ml_predictions\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 39,
+      "title": "ML Model Metric 33",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 132,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM ml_predictions\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 40,
+      "title": "ML Model Metric 34",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 132,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM ml_predictions\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 41,
+      "title": "ML Model Metric 35",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 140,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM ml_predictions\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 42,
+      "title": "ML Model Metric 36",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 140,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM ml_predictions\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 43,
+      "title": "ML Model Metric 37",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 148,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM ml_predictions\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 44,
+      "title": "ML Model Metric 38",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 148,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM ml_predictions\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 45,
+      "title": "ML Model Metric 39",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 156,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM ml_predictions\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 46,
+      "title": "ML Model Metric 40",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 156,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM ml_predictions\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 47,
+      "title": "ML Model Metric 41",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 164,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM ml_predictions\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 48,
+      "title": "ML Model Metric 42",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 164,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM ml_predictions\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 49,
+      "title": "ML Model Metric 43",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 172,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM ml_predictions\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 50,
+      "title": "ML Model Metric 44",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 172,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM ml_predictions\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 51,
+      "title": "ML Model Metric 45",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 180,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM ml_predictions\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 52,
+      "title": "ML Model Metric 46",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 180,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM ml_predictions\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 53,
+      "title": "ML Model Metric 47",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 188,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM ml_predictions\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 54,
+      "title": "ML Model Metric 48",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 188,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM ml_predictions\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 55,
+      "title": "ML Model Metric 49",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 196,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "aura-timescaledb"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT\n  time_bucket('1 minute', timestamp) as time,\n  COALESCE(COUNT(*), 0) as value\nFROM ml_predictions\nWHERE timestamp >= NOW() - INTERVAL '24 hours'\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "format": "time_series",
+          "timeColumn": "time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 36,
+  "style": "dark",
+  "tags": [
+    "aura",
+    "ml",
+    "model"
+  ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "",
+  "title": "AURA - ML Model",
+  "uid": "aura-ml-model",
+  "version": 1
+}

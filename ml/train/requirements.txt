@@ -1,6 +1,6 @@
-# ML Training Requirements for AURA K8s - Python 3.11 Compatible
-# Tested with Python 3.11.x (recommended)
-# Mac M4 Optimized - CPU-Only Training
+# BEAST LEVEL ML Training Requirements for AURA K8s
+# Python 3.11+ Compatible (Mac M4 & Windows)
+# Zero Cost - CPU-Only Training
 
 # Core Data Science (Latest stable versions)
 pandas>=2.2.0
@@ -11,19 +11,20 @@ scipy>=1.13.0
 scikit-learn>=1.5.0
 imbalanced-learn>=0.12.0
 
-# Gradient Boosting Libraries (Latest stable) - CPU Optimized
+# Gradient Boosting Libraries (Latest stable) - CPU Optimized for Mac M4
 xgboost>=2.1.0
 lightgbm>=4.5.0
 catboost>=1.2.7
 
-# Deep Learning (Latest stable releases) - Optional for Mac
-# tensorflow>=2.15.0  # Commented out - GPU not available on Mac
-# torch>=2.1.0  # Commented out - GPU not available on Mac
-# transformers>=4.35.0  # Commented out - GPU not available on Mac
+# Deep Learning (CPU-Only, Lightweight)
+# Optional: Only if needed for specific use cases
+# tensorflow>=2.15.0  # Commented - GPU not available, too heavy for Mac
+# torch>=2.1.0  # Commented - GPU not available, too heavy for Mac
 
-# Time Series Forecasting (CPU-Friendly)
+# Time Series Forecasting (CPU-Friendly, Fast)
 statsmodels>=0.14.0
-# prophet==1.1.1  # Commented out - requires heavy C++ build tools, use statsmodels instead
+# prophet==1.1.1  # Commented - requires heavy C++ build tools
+# Use statsmodels ARIMA/Exponential Smoothing instead (faster, lighter)
 
 # Hyperparameter Optimization
 optuna>=4.0.0
@@ -32,7 +33,7 @@ hyperopt>=0.2.7
 # Model Persistence
 joblib>=1.4.0
 
-# Visualization (Optional)
+# Visualization (Optional - for analysis)
 matplotlib>=3.9.0
 seaborn>=0.13.0
 plotly>=5.24.0
@@ -40,14 +41,26 @@ plotly>=5.24.0
 # Progress Bars
 tqdm>=4.66.0
 
-# Database
+# Database (for loading real data from PostgreSQL/TimescaleDB)
 psycopg[binary]>=3.2.0
 
-# API for serving
+# API for serving models
 fastapi>=0.115.0
 uvicorn>=0.32.0
 pydantic>=2.10.0
 
+# Dataset Downloading (Kaggle, GitHub, etc.)
+requests>=2.32.0
+kaggle>=1.6.0  # For Kaggle datasets (optional - need kaggle.json)
+
 # Utilities
 python-dotenv>=1.0.0
-requests>=2.32.0
+
+# Feature Engineering Enhancements
+scipy>=1.13.0  # For FFT, signal processing, advanced stats
+
+# Memory Optimization
+psutil>=5.9.0  # For monitoring memory usage during training
+
+# Data Validation
+great-expectations>=0.18.0  # Optional - for data quality checks

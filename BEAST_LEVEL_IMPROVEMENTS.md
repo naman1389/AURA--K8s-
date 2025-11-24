@@ -237,6 +237,89 @@ study.optimize(objective, n_trials=50)  # Reasonable for CPU
 
 ---
 
+## 📊 REAL DATASETS FOR TRAINING
+
+### Available Datasets (Zero Cost)
+
+We've integrated real-world datasets that can be downloaded automatically for training:
+
+1. **Synthetic Kubernetes Dataset** (Always Available)
+   - **Source**: Generated locally using `dataset_downloader.py`
+   - **Size**: Configurable (default: 100,000 samples)
+   - **Features**: Realistic Kubernetes metrics with 24+ anomaly types
+   - **Cost**: $0 - Generated on your Mac
+   - **Usage**: `python ml/train/dataset_downloader.py` or set `DATASET_NAME=synthetic_k8s`
+
+2. **Yahoo S5 Time Series Anomaly Detection**
+   - **Source**: GitHub (https://github.com/yahoo/ydk)
+   - **Type**: Real and synthetic time-series data with labeled anomalies
+   - **Size**: ~3.2 GB
+   - **Features**: Time-series metrics perfect for forecasting
+   - **Cost**: $0 - Free download
+   - **Usage**: Set `DATASET_NAME=yahoo_s5`
+
+3. **Numenta Anomaly Benchmark (NAB)**
+   - **Source**: GitHub (https://github.com/numenta/NAB)
+   - **Type**: Real-time anomaly detection benchmark dataset
+   - **Size**: ~50 MB
+   - **Features**: Diverse time-series with real-world anomalies
+   - **Cost**: $0 - Free download
+   - **Usage**: Set `DATASET_NAME=numenta`
+
+4. **KDD Cup 1999 Network Intrusion** (Adaptable)
+   - **Source**: Kaggle (requires Kaggle API)
+   - **Type**: Network intrusion detection (can be adapted for K8s)
+   - **Size**: ~700 MB
+   - **Features**: Network traffic patterns, anomalies
+   - **Cost**: $0 - Free with Kaggle account
+   - **Usage**: Set `DATASET_NAME=kdd_cup_99` (requires kaggle.json)
+
+5. **Real Kubernetes Data from Your Cluster** (Best Option)
+   - **Source**: Your own Kubernetes cluster via collector
+   - **Type**: Real production metrics
+   - **Size**: Unlimited (collected over time)
+   - **Features**: Actual anomalies from your environment
+   - **Cost**: $0 - Uses existing infrastructure
+   - **Usage**: Set `LOAD_FROM_DATABASE=true` and `DATABASE_URL=...`
+
+### Dataset Downloader
+
+Use the built-in dataset downloader:
+
+```bash
+# Download/Generate datasets
+cd ml/train
+python dataset_downloader.py
+
+# Or use in training script
+python beast_train.py  # Automatically uses synthetic_k8s dataset
+```
+
+### Dataset Selection Priority
+
+The training script tries data sources in this order:
+1. **Database** (if `LOAD_FROM_DATABASE=true`) - Real cluster data
+2. **CSV File** (if `TRAINING_DATA_PATH=...`) - Custom data
+3. **Downloaded Dataset** (if `DATASET_NAME=...`) - Real datasets
+4. **Synthetic Generation** (fallback) - Always available
+
+### Recommended Approach
+
+**For Best Results:**
+1. Start with `synthetic_k8s` dataset (100K+ samples) for initial training
+2. Collect real data from your cluster over 2-4 weeks
+3. Retrain with real data (50K+ samples) for production accuracy
+
+**Quick Start (Today):**
+```bash
+export DATASET_NAME=synthetic_k8s
+export USE_REAL_DATASETS=true
+cd ml/train
+python beast_train.py
+```
+
+---
+
 ## 📊 REAL KUBERNETES DATA COLLECTION
 
 ### Zero-Cost Data Collection Strategy

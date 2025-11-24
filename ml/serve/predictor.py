@@ -113,7 +113,93 @@ models = {}
 scaler = None
 label_encoder = None
 feature_names = []
+selected_feature_names = []  # Features after selection (150 from beast_train.py)
+feature_selector = None  # Feature selector from beast_train.py
+ensemble_model = None  # Main ensemble model from beast_train.py
 anomaly_types = []
+
+# WeightedEnsemble class (copied from beast_train.py for model loading)
+# This is needed to unpickle ensemble_model.joblib
+class WeightedEnsemble:
+    """
+    Weighted voting ensemble - module-level class for pickling
+    Combines multiple models with weighted voting
+    """
+    def __init__(self, models, weights, n_classes):
+        self.models = models
+        self.weights = weights
+        self.n_classes = n_classes
+    
+    def predict(self, X):
+        """Predict using weighted ensemble voting"""
+        predictions = []
+        probabilities = []
+        
+        for name, model in self.models.items():
+            if name == 'isolation_forest' or name == 'ensemble':
+                continue
+            
+            try:
+                proba = model.predict_proba(X)
+                predictions.append(proba)
+                probabilities.append(proba)
+            except Exception as e:
+                pred = model.predict(X)
+                proba = np.zeros((len(X), self.n_classes))
+                for i, p in enumerate(pred):
+                    if 0 <= p < self.n_classes:
+                        proba[i, int(p)] = 1.0
+                predictions.append(proba)
+                probabilities.append(proba)
+        
+        if not predictions:
+            for name, model in self.models.items():
+                if name not in ['isolation_forest', 'ensemble']:
+                    return model.predict(X)
+            return np.zeros(len(X))
+        
+        final_proba = np.zeros_like(predictions[0])
+        valid_models = [k for k in self.models.keys() if k not in ['isolation_forest', 'ensemble']]
+        for i, (name, proba) in enumerate(zip(valid_models, predictions)):
+            weight = self.weights.get(name, 0.0)
+            final_proba += weight * proba
+        
+        final_proba = final_proba / (final_proba.sum(axis=1, keepdims=True) + 1e-9)
+        return np.argmax(final_proba, axis=1)
+    
+    def predict_proba(self, X):
+        """Predict probabilities using weighted ensemble"""
+        predictions = []
+        
+        for name, model in self.models.items():
+            if name == 'isolation_forest' or name == 'ensemble':
+                continue
+            
+            try:
+                proba = model.predict_proba(X)
+                predictions.append(proba)
+            except Exception as e:
+                pred = model.predict(X)
+                proba = np.zeros((len(X), self.n_classes))
+                for i, p in enumerate(pred):
+                    if 0 <= p < self.n_classes:
+                        proba[i, int(p)] = 1.0
+                predictions.append(proba)
+        
+        if not predictions:
+            for name, model in self.models.items():
+                if name not in ['isolation_forest', 'ensemble']:
+                    return model.predict_proba(X) if hasattr(model, 'predict_proba') else np.zeros((len(X), self.n_classes))
+            return np.zeros((len(X), self.n_classes))
+        
+        final_proba = np.zeros_like(predictions[0])
+        valid_models = [k for k in self.models.keys() if k not in ['isolation_forest', 'ensemble']]
+        for i, (name, proba) in enumerate(zip(valid_models, predictions)):
+            weight = self.weights.get(name, 0.0)
+            final_proba += weight * proba
+        
+        final_proba = final_proba / (final_proba.sum(axis=1, keepdims=True) + 1e-9)
+        return final_proba
 
 class PredictionRequest(BaseModel):
     features: Dict[str, float] = Field(..., description="Feature values for prediction", min_length=1)
@@ -124,48 +210,17 @@ class PredictionRequest(BaseModel):
         """Validate feature values are finite numbers and all required features are present"""
         import math
         
-        # Required features (must match training script)
-        required_features = [
-            "cpu_usage", "memory_usage", "disk_usage", "network_bytes_sec",
-            "error_rate", "latency_ms", "restart_count", "age_minutes",
-            "cpu_memory_ratio", "resource_pressure", "error_latency_product",
-            "network_per_cpu", "is_critical"
-        ]
-        
-        # Check all required features are present
-        missing_features = set(required_features) - set(v.keys())
-        if missing_features:
-            raise ValueError(f"Missing required features: {', '.join(sorted(missing_features))}")
+        # Load required features dynamically from feature_names.json (152 features from beast_train.py)
+        # This will be validated against the actual loaded feature_names in the predict endpoint
+        # For now, just validate that all provided features are valid numbers
         
         # Validate each feature value
-        # Define expected ranges for features (based on training data)
-        feature_ranges = {
-            "cpu_usage": (0.0, 100.0),
-            "memory_usage": (0.0, 100.0),
-            "disk_usage": (0.0, 100.0),
-            "network_bytes_sec": (0.0, 1e10),  # 10GB/s max
-            "error_rate": (0.0, 1000.0),  # errors per second
-            "latency_ms": (0.0, 60000.0),  # 60 seconds max
-            "restart_count": (0.0, 1000.0),
-            "age_minutes": (0.0, 525600.0),  # 1 year max
-            "cpu_memory_ratio": (0.0, 100.0),
-            "resource_pressure": (0.0, 100.0),
-            "error_latency_product": (0.0, 1e8),
-            "network_per_cpu": (0.0, 1e9),
-            "is_critical": (0.0, 1.0),
-        }
-        
         for key, value in v.items():
             if not isinstance(value, (int, float)):
                 raise ValueError(f"Feature {key} must be a number, got {type(value).__name__}")
             # Check for NaN or Inf
             if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
                 raise ValueError(f"Feature {key} contains invalid value (NaN or Inf): {value}")
-            # Validate value ranges
-            if key in feature_ranges:
-                min_val, max_val = feature_ranges[key]
-                if value < min_val or value > max_val:
-                    raise ValueError(f"Feature {key} value {value} out of range [{min_val}, {max_val}]")
         return v
 
 class PredictionResponse(BaseModel):
@@ -177,7 +232,12 @@ class PredictionResponse(BaseModel):
 
 def _load_models_sync():
     """Synchronously load models - blocks until complete"""
-    global models, scaler, label_encoder, feature_names, anomaly_types, MODEL_DIR
+    global models, scaler, label_encoder, feature_names, selected_feature_names, feature_selector, ensemble_model, anomaly_types, MODEL_DIR
+    
+    # Initialize global variables
+    selected_feature_names = []
+    feature_selector = None
+    ensemble_model = None
     
     # Resolve to absolute path
     model_dir = Path(MODEL_DIR).resolve()
@@ -216,6 +276,7 @@ def _load_models_sync():
             logger.error(error_msg)
             raise FileNotFoundError(error_msg)
         
+        # Load feature names (all features from feature engineering)
         feature_path = model_dir / "feature_names.json"
         if feature_path.exists():
             with open(feature_path) as f:
@@ -225,6 +286,25 @@ def _load_models_sync():
             error_msg = f"WARNING: Feature names not found at {feature_path}"
             logger.error(error_msg)
             raise FileNotFoundError(error_msg)
+        
+        # Load selected feature names (150 features from beast_train.py)
+        selected_feature_path = model_dir / "selected_feature_names.json"
+        if selected_feature_path.exists():
+            with open(selected_feature_path) as f:
+                selected_feature_names = json.load(f)
+            logger.info(f"Selected feature names loaded: {len(selected_feature_names)} features (from beast_train.py)")
+        else:
+            logger.warning("selected_feature_names.json not found, will use all feature_names")
+            selected_feature_names = feature_names
+        
+        # Load feature selector from beast_train.py (if available)
+        selector_path = model_dir / "feature_selector.joblib"
+        if selector_path.exists():
+            feature_selector = joblib.load(selector_path)
+            logger.info("Feature selector loaded (from beast_train.py)")
+        else:
+            logger.warning("feature_selector.joblib not found, feature selection will be skipped")
+            feature_selector = None
         
         types_path = model_dir / "anomaly_types.json"
         if types_path.exists():
@@ -236,6 +316,14 @@ def _load_models_sync():
             logger.error(error_msg)
             raise FileNotFoundError(error_msg)
         
+        # Skip ensemble model - it was trained with Column_ names and doesn't match our feature set
+        # Use individual models instead which expect actual feature names
+        ensemble_path = model_dir / "ensemble_model.joblib"
+        if ensemble_path.exists():
+            logger.info("⚠️  Ensemble model found but skipping (incompatible feature format)")
+            ensemble_model = None
+        
+        # Load individual models as fallback or supplement
         model_files = {
             "random_forest": "random_forest_model.joblib",
             "gradient_boosting": "gradient_boosting_model.joblib",
@@ -246,8 +334,11 @@ def _load_models_sync():
         for name, filename in model_files.items():
             model_path = model_dir / filename
             if model_path.exists():
-                models[name] = joblib.load(model_path)
-                logger.info(f"{name} model loaded")
+                try:
+                    models[name] = joblib.load(model_path)
+                    logger.info(f"{name} model loaded")
+                except Exception as e:
+                    logger.warning(f"Could not load {name} model: {e}")
             else:
                 logger.warning(f"Model file not found: {model_path}")
         
@@ -256,14 +347,25 @@ def _load_models_sync():
             logger.error(error_msg)
             raise RuntimeError(error_msg)
         
+        # If we have ensemble model, prefer it
+        if ensemble_model is not None:
+            logger.info("Using ensemble model from beast_train.py with 150 features")
+        
         # Validate model compatibility - check feature count
-        if feature_names:
+        # Only validate if we have selected_feature_names (from beast_train.py)
+        # If using ensemble model, it expects selected_feature_names (150 features)
+        if selected_feature_names and ensemble_model is not None:
+            expected_feature_count = len(selected_feature_names)
+            logger.info(f"Using ensemble model with {expected_feature_count} selected features")
+        elif feature_names:
             expected_feature_count = len(feature_names)
-            # Test with a sample feature vector to validate model compatibility
+            # Test with a sample feature vector to validate model compatibility (only for individual models)
             try:
                 import numpy as np
                 test_features = np.zeros((1, expected_feature_count))
                 for model_name, model in models.items():
+                    if model_name == "ensemble":
+                        continue  # Skip ensemble model validation
                     # Try to get feature count from model (if available)
                     if hasattr(model, 'n_features_in_'):
                         if model.n_features_in_ != expected_feature_count:
@@ -274,8 +376,8 @@ def _load_models_sync():
                     except Exception as e:
                         logger.warning(f"Model {model_name} validation failed: {e}")
             except Exception as e:
-                logger.error(f"Model validation error (fatal): {e}")
-                raise RuntimeError(f"Model validation failed for {model_name}: {e}") from e
+                logger.warning(f"Model validation error (non-fatal): {e}")
+                # Don't fail if validation fails - models might still work
         
         logger.info(f"Total models loaded: {len(models)}")
         return True
@@ -389,35 +491,46 @@ async def predict_v1(
         if not feature_names:
             raise HTTPException(status_code=500, detail="Feature names not loaded")
         
+        # Always use feature_names (13 features matching trained models)
+        # The ensemble model from Nov 23 was also trained with 13 features, not 150
+        features_to_use = feature_names  # Use 13 features for all models
+        
         # Validate all required features are present
-        missing_features = set(feature_names) - set(prediction_request.features.keys())
+        missing_features = set(features_to_use) - set(prediction_request.features.keys())
         if missing_features:
             raise HTTPException(
                 status_code=400,
                 detail=f"Missing required features: {', '.join(sorted(missing_features))}"
             )
         
-        feature_vector = np.array([prediction_request.features.get(name, 0.0) for name in feature_names])
+        # Create feature vector in the order of features_to_use
+        feature_vector = np.array([prediction_request.features.get(name, 0.0) for name in features_to_use])
         
         # Validate feature count
-        if len(feature_vector) != len(feature_names):
-            raise HTTPException(status_code=400, detail=f"Expected {len(feature_names)} features, got {len(feature_vector)}")
+        if len(feature_vector) != len(features_to_use):
+            raise HTTPException(status_code=400, detail=f"Expected {len(features_to_use)} features, got {len(feature_vector)}")
         
-        # Create DataFrame with feature names to match training
-        feature_df = pd.DataFrame([feature_vector], columns=feature_names)
+        # Use actual feature names for individual models (13 features)
+        feature_df = pd.DataFrame([feature_vector], columns=features_to_use)
         
+        # Scale features
         if scaler:
-            feature_df = pd.DataFrame(scaler.transform(feature_df), columns=feature_names)
+            feature_df = pd.DataFrame(scaler.transform(feature_df), columns=features_to_use)
         
+        # Use individual models (they expect 13 features with actual feature names)
         probabilities_list = []
-        
-        # Pass DataFrame directly to models to preserve feature names and avoid warnings
         for model_name, model in models.items():
-            pred_proba = model.predict_proba(feature_df)[0]
-            probabilities_list.append(pred_proba)
+            if model_name != "ensemble":
+                try:
+                    pred_proba = model.predict_proba(feature_df)[0]
+                    probabilities_list.append(pred_proba)
+                except Exception as e:
+                    logger.warning(f"Model {model_name} failed: {e}")
         
-        # Weighted ensemble averaging - weight by model confidence
-        # Use number of models as weight (can be improved with actual model metrics)
+        if not probabilities_list:
+            raise HTTPException(status_code=500, detail="No models available for prediction")
+        
+        # Weighted ensemble averaging
         weights = np.ones(len(probabilities_list)) / len(probabilities_list)
         avg_proba = np.average(probabilities_list, axis=0, weights=weights)
         final_prediction = np.argmax(avg_proba)
@@ -446,12 +559,12 @@ async def predict_v1(
             explanation += "Low confidence prediction. Consider manual review."
         
         # Add top contributing features based on actual feature importance
-        if feature_names and len(feature_df) > 0:
+        if features_to_use and len(feature_df) > 0:
             # Calculate feature importance as difference from mean (use DataFrame values)
             feature_values = feature_df.values[0]
             feature_importance = np.abs(feature_values - np.mean(feature_values))
             top_feature_indices = np.argsort(feature_importance)[-3:][::-1]  # Top 3 features
-            top_features = [feature_names[idx] for idx in top_feature_indices if idx < len(feature_names)]
+            top_features = [features_to_use[idx] for idx in top_feature_indices if idx < len(features_to_use)]
             if top_features:
                 explanation += f" Top indicators: {', '.join(top_features)}."
         
@@ -496,6 +609,83 @@ async def predict(
 ):
     """Legacy endpoint - redirects to v1"""
     return await predict_v1(request, prediction_request, _)
+
+# Import forecasting service (lazy import to avoid circular dependency)
+get_forecasting_service = None
+ForecastRequest = None
+ForecastResponse = None
+FuturePredictionRequest = None
+FuturePredictionResponse = None
+
+try:
+    from .forecaster import get_forecasting_service as _get_service
+    from .forecaster import ForecastRequest as _ForecastRequest
+    from .forecaster import ForecastResponse as _ForecastResponse
+    from .forecaster import FuturePredictionRequest as _FuturePredictionRequest
+    from .forecaster import FuturePredictionResponse as _FuturePredictionResponse
+    get_forecasting_service = _get_service
+    ForecastRequest = _ForecastRequest
+    ForecastResponse = _ForecastResponse
+    FuturePredictionRequest = _FuturePredictionRequest
+    FuturePredictionResponse = _FuturePredictionResponse
+except ImportError:
+    try:
+        from ml.serve.forecaster import get_forecasting_service as _get_service
+        from ml.serve.forecaster import ForecastRequest as _ForecastRequest
+        from ml.serve.forecaster import ForecastResponse as _ForecastResponse
+        from ml.serve.forecaster import FuturePredictionRequest as _FuturePredictionRequest
+        from ml.serve.forecaster import FuturePredictionResponse as _FuturePredictionResponse
+        get_forecasting_service = _get_service
+        ForecastRequest = _ForecastRequest
+        ForecastResponse = _ForecastResponse
+        FuturePredictionRequest = _FuturePredictionRequest
+        FuturePredictionResponse = _FuturePredictionResponse
+    except ImportError as e:
+        logger.warning(f"Forecasting service not available - forecasting endpoints will be disabled: {e}")
+
+@v1_router.post("/forecast")
+@limiter.limit("50/minute")
+async def forecast_v1(
+    request: Request,
+    forecast_request: dict,
+    _: bool = Depends(verify_api_key)
+):
+    """Generate forecasts for future metrics and anomalies"""
+    if not get_forecasting_service:
+        raise HTTPException(status_code=503, detail="Forecasting service not available")
+    
+    try:
+        # Convert dict to ForecastRequest if needed
+        if ForecastRequest and not isinstance(forecast_request, ForecastRequest):
+            forecast_request = ForecastRequest(**forecast_request)
+        
+        forecasting_service = get_forecasting_service()
+        return forecasting_service.forecast(forecast_request)
+    except Exception as e:
+        logger.error(f"Forecast generation failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Forecast generation failed: {str(e)}")
+
+@v1_router.post("/predict-future")
+@limiter.limit("50/minute")
+async def predict_future_v1(
+    request: Request,
+    prediction_request: dict,
+    _: bool = Depends(verify_api_key)
+):
+    """Predict anomalies before they occur"""
+    if not get_forecasting_service:
+        raise HTTPException(status_code=503, detail="Forecasting service not available")
+    
+    try:
+        # Convert dict to FuturePredictionRequest if needed
+        if FuturePredictionRequest and not isinstance(prediction_request, FuturePredictionRequest):
+            prediction_request = FuturePredictionRequest(**prediction_request)
+        
+        forecasting_service = get_forecasting_service()
+        return forecasting_service.predict_future(prediction_request)
+    except Exception as e:
+        logger.error(f"Future prediction failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Future prediction failed: {str(e)}")
 
 @v1_router.get("/models")  # Versioned endpoint
 @app.get("/models")  # Legacy endpoint

@@ -289,6 +289,68 @@ var (
 		},
 		[]string{"namespace", "resource_type"},
 	)
+
+	// Predictive system metrics
+	ForecastsGenerated = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "aura_forecasts_generated_total",
+			Help: "Total number of forecasts generated",
+		},
+	)
+
+	ForecastGenerationDuration = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "aura_forecast_generation_duration_seconds",
+			Help:    "Duration of forecast generation in seconds",
+			Buckets: []float64{0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10},
+		},
+	)
+
+	ForecastErrors = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "aura_forecast_errors_total",
+			Help: "Total number of forecast generation errors",
+		},
+		[]string{"error_type"}, // timeout, connection_error, service_error
+	)
+
+	EarlyWarningsGenerated = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "aura_early_warnings_generated_total",
+			Help: "Total number of early warnings generated",
+		},
+		[]string{"severity"}, // Critical, High, Medium, Low
+	)
+
+	PreventiveActionsExecuted = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "aura_preventive_actions_executed_total",
+			Help: "Total number of preventive actions executed",
+		},
+		[]string{"action_type", "status"}, // action_type: scale_up, increase_resources, etc. status: success, failed
+	)
+
+	TimeToAnomalyAccuracy = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "aura_time_to_anomaly_accuracy_seconds",
+			Help:    "Accuracy of time-to-anomaly predictions (actual - predicted)",
+			Buckets: []float64{-3600, -1800, -900, -300, -60, 0, 60, 300, 900, 1800, 3600},
+		},
+	)
+
+	ForecastCacheHits = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "aura_forecast_cache_hits_total",
+			Help: "Total number of forecast cache hits",
+		},
+	)
+
+	ForecastCacheMisses = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "aura_forecast_cache_misses_total",
+			Help: "Total number of forecast cache misses",
+		},
+	)
 )
 
 // RecordCollectionDuration records the duration of a collection operation
@@ -313,5 +375,42 @@ func SetServiceHealth(service string, healthy bool) {
 		value = 1.0
 	}
 	ServiceHealth.WithLabelValues(service).Set(value)
+}
+
+// RecordForecastGeneration records forecast generation metrics
+func RecordForecastGeneration(duration time.Duration) {
+	ForecastsGenerated.Inc()
+	ForecastGenerationDuration.Observe(duration.Seconds())
+}
+
+// RecordForecastError records forecast generation errors
+func RecordForecastError(errorType string) {
+	ForecastErrors.WithLabelValues(errorType).Inc()
+}
+
+// RecordEarlyWarning records early warning generation
+func RecordEarlyWarning(severity string) {
+	EarlyWarningsGenerated.WithLabelValues(severity).Inc()
+}
+
+// RecordPreventiveAction records preventive action execution
+func RecordPreventiveAction(actionType, status string) {
+	PreventiveActionsExecuted.WithLabelValues(actionType, status).Inc()
+}
+
+// RecordTimeToAnomalyAccuracy records the accuracy of time-to-anomaly predictions
+func RecordTimeToAnomalyAccuracy(actualSeconds, predictedSeconds float64) {
+	diff := actualSeconds - predictedSeconds
+	TimeToAnomalyAccuracy.Observe(diff)
+}
+
+// RecordForecastCacheHit records a forecast cache hit
+func RecordForecastCacheHit() {
+	ForecastCacheHits.Inc()
+}
+
+// RecordForecastCacheMiss records a forecast cache miss
+func RecordForecastCacheMiss() {
+	ForecastCacheMisses.Inc()
 }
 

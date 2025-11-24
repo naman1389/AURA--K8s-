@@ -16,6 +16,27 @@ from typing import Dict, List, Optional, Any
 import httpx
 import json
 
+# Use uvloop for faster event loop (production optimization)
+try:
+    import uvloop
+    asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+    logger = logging.getLogger(__name__)
+    logger.info("✅ Using uvloop for optimized async performance")
+except ImportError:
+    logger = logging.getLogger(__name__)
+    logger.warning("⚠️  uvloop not available, using default event loop (install with: pip install uvloop)")
+
+# Connection pooling for aiohttp/httpx
+# httpx already uses connection pooling, but we can optimize
+httpx_connector_config = {
+    "limits": httpx.Limits(
+        max_connections=100,
+        max_keepalive_connections=20,
+        keepalive_expiry=30.0,
+    ),
+    "timeout": httpx.Timeout(30.0, connect=5.0),
+}
+
 # Gemini API integration
 try:
     import google.generativeai as genai
@@ -36,10 +57,18 @@ except ImportError:
 try:
     # Try relative import first (when running from mcp/ directory)
     from .tools import KubernetesTools
+    from .remediation_planner import RemediationPlanner, MultiStrategyRemediationPlan
+    from .cost_calculator import CostCalculator, CostOptimizedPlanner
+    from .remediation_learner import RemediationLearningEngine, RemediationSuccessPredictor, BestActionRecommender
+    from .safety_checker import RemediationSafetyChecker
 except ImportError:
     # Fall back to absolute import (when running from project root)
     try:
         from mcp.tools import KubernetesTools
+        from mcp.remediation_planner import RemediationPlanner, MultiStrategyRemediationPlan
+        from mcp.cost_calculator import CostCalculator, CostOptimizedPlanner
+        from mcp.remediation_learner import RemediationLearningEngine, RemediationSuccessPredictor, BestActionRecommender
+        from mcp.safety_checker import RemediationSafetyChecker
     except ImportError:
         # Last resort - direct import if tools.py is in same directory
         import sys
@@ -53,6 +82,18 @@ except ImportError:
             KubernetesTools = tools.KubernetesTools
         else:
             raise ImportError("Could not import KubernetesTools from mcp.tools or tools")
+        # Try to import new modules
+        try:
+            from mcp.remediation_planner import RemediationPlanner, MultiStrategyRemediationPlan
+            from mcp.cost_calculator import CostCalculator, CostOptimizedPlanner
+            from mcp.remediation_learner import RemediationLearningEngine, RemediationSuccessPredictor, BestActionRecommender
+            from mcp.safety_checker import RemediationSafetyChecker
+        except ImportError:
+            RemediationPlanner = None
+            CostCalculator = None
+            RemediationLearningEngine = None
+            RemediationSafetyChecker = None
+            logger.warning("Advanced remediation modules not available, using basic mode")
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
@@ -64,17 +105,23 @@ logger = logging.getLogger(__name__)
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2")
 
-# Gemini API configuration
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyCvwp8qA9NY2tiXxjqShEjsvRGW9rOA388")
-if GEMINI_AVAILABLE and GEMINI_API_KEY:
-    try:
-        genai.configure(api_key=GEMINI_API_KEY)
-        GEMINI_MODEL = genai.GenerativeModel('gemini-pro')
-        logger.info("✅ Gemini API configured")
-    except Exception as e:
-        logger.warning(f"⚠️  Gemini API configuration failed: {e}")
+# Gemini API configuration - read from environment variable only (no hardcoded default)
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+if GEMINI_AVAILABLE:
+    if GEMINI_API_KEY:
+        try:
+            genai.configure(api_key=GEMINI_API_KEY)
+            GEMINI_MODEL = genai.GenerativeModel('gemini-pro')
+            logger.info("✅ Gemini API configured")
+        except Exception as e:
+            logger.warning(f"⚠️  Gemini API configuration failed: {e}")
+            GEMINI_MODEL = None
+    else:
+        logger.info("ℹ️  GEMINI_API_KEY not set, using Ollama only")
         GEMINI_MODEL = None
 else:
+    if GEMINI_API_KEY:
+        logger.warning("⚠️  Gemini package not installed (pip install google-generativeai), using Ollama only")
     GEMINI_MODEL = None
 
 # Initialize error detector
@@ -172,6 +219,31 @@ try:
 except Exception as e:
     logger.error(f"❌ Failed to initialize Kubernetes client: {e}")
     k8s_tools = None
+
+# Initialize advanced remediation components
+cost_calculator = None
+remediation_learner = None
+remediation_planner = None
+safety_checker = None
+
+try:
+    if CostCalculator:
+        cost_calculator = CostCalculator()
+        logger.info("✅ Cost calculator initialized")
+    if RemediationLearningEngine:
+        remediation_learner = RemediationLearningEngine()
+        logger.info("✅ Remediation learner initialized")
+    if RemediationPlanner:
+        remediation_planner = RemediationPlanner(
+            learner=remediation_learner,
+            cost_calculator=cost_calculator
+        )
+        logger.info("✅ Remediation planner initialized")
+    if RemediationSafetyChecker:
+        safety_checker = RemediationSafetyChecker(k8s_tools=k8s_tools)
+        logger.info("✅ Safety checker initialized")
+except Exception as e:
+    logger.warning(f"⚠️  Failed to initialize some advanced components: {e}")
 
 
 class IssueAnalysisRequest(BaseModel):
@@ -368,26 +440,87 @@ async def analyze_with_plan_v1(request: Request, analysis_request: IssueAnalysis
         )
 
         try:
-            # Use hybrid AI: Gemini for complex issues, Ollama for simple ones
-            complexity = assess_issue_complexity(analysis_request, detected_errors, events)
+            # Use multi-strategy planning if available
+            use_multi_strategy = remediation_planner is not None and cost_calculator is not None
             
-            if complexity == 'complex' and GEMINI_MODEL:
-                logger.info("Using Gemini API for complex issue analysis")
-                ai_response = await call_gemini(prompt)
+            if use_multi_strategy:
+                logger.info("Using multi-strategy remediation planning")
+                
+                # Generate multiple strategies
+                multi_plan = remediation_planner.generate_strategies(
+                    issue_type=analysis_request.issue_type,
+                    severity=analysis_request.severity,
+                    pod_context=pod_info,
+                    deployment=deployment,
+                    historical_data=context_data
+                )
+                
+                # Select best strategy based on constraints
+                constraints = {}
+                if analysis_request.severity == "critical":
+                    constraints["max_time"] = 300  # 5 minutes max for critical
+                elif analysis_request.severity == "low":
+                    constraints["max_cost"] = 50.0  # Lower cost for low severity
+                
+                best_strategy = multi_plan.select_best_strategy(constraints=constraints)
+                
+                # Convert strategy to plan format
+                actions = [
+                    {
+                        "type": action.type,
+                        "target": action.target,
+                        "operation": action.operation,
+                        "parameters": action.parameters,
+                        "order": action.order
+                    }
+                    for action in best_strategy.actions
+                ]
+                
+                # Run safety checks
+                safety_warnings = []
+                if safety_checker:
+                    for action in actions:
+                        passed, warnings = safety_checker.pre_check(action, context_data)
+                        if warnings:
+                            safety_warnings.extend(warnings)
+                        if not passed:
+                            logger.warning(f"Safety check failed for action {action.get('operation')}")
+                
+                reasoning = best_strategy.reasoning
+                if safety_warnings:
+                    reasoning += f" Safety warnings: {', '.join(safety_warnings)}"
+                
+                return RemediationPlan(
+                    actions=actions,
+                    reasoning=reasoning,
+                    confidence=best_strategy.confidence,
+                    risk_level=best_strategy.risk_level.value
+                )
             else:
-                logger.info("Using Ollama for issue analysis")
-                ai_response = await call_ollama(prompt)
-            
-            plan = parse_remediation_plan(ai_response)
-            
-            validate_plan(plan)
-            
-            return RemediationPlan(
-                actions=plan.get("actions", []),
-                reasoning=plan.get("reasoning", "AI-generated remediation plan"),
-                confidence=plan.get("confidence", 0.75),
-                risk_level=plan.get("risk_level", "medium")
-            )
+                # Fallback to original AI-based planning
+                # Try Ollama first (cost-effective), fallback to Gemini if Ollama fails
+                try:
+                    logger.info("Using Ollama for issue analysis (cost-effective)")
+                    ai_response = await call_ollama(prompt)
+                except Exception as ollama_err:
+                    logger.warning(f"Ollama failed: {ollama_err}, falling back to Gemini")
+                    if GEMINI_MODEL:
+                        logger.info("Using Gemini API as fallback")
+                    ai_response = await call_gemini(prompt)
+                else:
+                        logger.error("Both Ollama and Gemini unavailable")
+                        raise
+                
+                plan = parse_remediation_plan(ai_response)
+                
+                validate_plan(plan)
+                
+                return RemediationPlan(
+                    actions=plan.get("actions", []),
+                    reasoning=plan.get("reasoning", "AI-generated remediation plan"),
+                    confidence=plan.get("confidence", 0.75),
+                    risk_level=plan.get("risk_level", "medium")
+                )
 
         except httpx.ConnectError as e:
             logger.error(f"AI analysis failed: connection error - {type(e).__name__}: {e}", exc_info=True)
@@ -483,14 +616,16 @@ def assess_issue_complexity(request, detected_errors, events) -> str:
 
 
 async def call_gemini(prompt: str) -> str:
-    """Call Gemini API for complex issue analysis"""
+    """Call Gemini API for complex issue analysis (fallback when Ollama fails)"""
+    if not GEMINI_MODEL:
+        raise Exception("Gemini model not available")
     try:
         response = GEMINI_MODEL.generate_content(prompt)
         return response.text
     except Exception as e:
         logger.error(f"Gemini API call failed: {e}")
-        # Fallback to Ollama
-        return await call_ollama(prompt)
+        # Don't fallback to Ollama here - this is already the fallback
+        raise Exception(f"Gemini API call failed: {e}")
 
 
 def build_comprehensive_prompt(request, pod_info, events, logs, deployment, metrics, context, detected_errors):
@@ -553,32 +688,100 @@ LOGS (last 50 lines):
 
 TASK: Analyze this issue and create a detailed remediation plan.
 
-AVAILABLE ACTIONS:
+AVAILABLE ACTIONS (50+ actions available):
 
 1. POD ACTIONS:
    - restart: Delete pod for controller recreation
      Parameters: {{"grace_period_seconds": 30}}
    - delete: Permanently delete pod
      Parameters: {{"grace_period_seconds": 0}}
+   - force_delete: Immediate pod deletion
+   - evict: Evict pod (respects PDB)
+   - recreate: Delete + recreate pod
+   - cordon: Prevent scheduling new pods on node
+   - uncordon: Allow scheduling new pods on node
 
 2. DEPLOYMENT ACTIONS:
-   - increase_memory: Scale memory resources
+   - increase_memory: Scale memory resources up
      Parameters: {{"factor": 1.5}}  # 50% increase
-   - increase_cpu: Scale CPU resources
+   - decrease_memory: Scale memory resources down
+     Parameters: {{"factor": 0.8}}  # 20% decrease
+   - increase_cpu: Scale CPU resources up
      Parameters: {{"factor": 1.5}}
+   - decrease_cpu: Scale CPU resources down
+     Parameters: {{"factor": 0.8}}
    - scale: Change replica count
      Parameters: {{"replicas": 1, "direction": "up|down"}}
+   - scale_up: Increase replicas
+     Parameters: {{"replicas": 1}}
+   - scale_down: Decrease replicas
+     Parameters: {{"replicas": 1}}
+   - scale_to: Scale to specific count
+     Parameters: {{"replicas": 3}}
+   - set_resources: Set exact resource values
+     Parameters: {{"cpu": "1000m", "memory": "2Gi"}}
+   - remove_limits: Remove resource limits
    - update_image: Change container image
      Parameters: {{"image": "nginx:1.21", "container": "app"}}
    - restart_rollout: Trigger rolling restart
-     Parameters: {{}}
+   - rollback_deployment: Rollback to previous version
+   - pause: Pause deployment
+   - resume: Resume deployment
+   - undo: Undo last change
+   - change_strategy: Change deployment strategy
+     Parameters: {{"strategy": "Recreate|RollingUpdate"}}
+   - set_max_surge: Set max surge pods
+     Parameters: {{"max_surge": "25%"}}
+   - set_max_unavailable: Set max unavailable
+     Parameters: {{"max_unavailable": "1"}}
 
 3. STATEFULSET ACTIONS:
-   - increase_memory, increase_cpu (same as deployment)
+   - increase_memory, increase_cpu, decrease_memory, decrease_cpu
+   - rollback_statefulset: Rollback to previous version
 
 4. NODE ACTIONS:
-   - drain: Mark node unschedulable
+   - drain: Mark node unschedulable and evict pods
    - uncordon: Mark node schedulable
+   - taint: Add taint to node
+     Parameters: {{"key": "key", "value": "value", "effect": "NoSchedule"}}
+   - untaint: Remove taint from node
+     Parameters: {{"key": "key"}}
+   - label: Add label to node
+     Parameters: {{"key": "key", "value": "value"}}
+
+5. SERVICE ACTIONS:
+   - traffic_split: Split traffic between versions
+   - remove_pod_from_lb: Remove pod from load balancer
+   - add_pod_to_lb: Add pod to load balancer
+
+6. CONFIGMAP ACTIONS:
+   - update: Update ConfigMap data
+     Parameters: {{"data": {{"key": "value"}}}}
+   - rollback: Rollback ConfigMap (requires history)
+
+7. SECRET ACTIONS:
+   - update: Update Secret data
+     Parameters: {{"data": {{"key": "value"}}}}
+   - rotate: Rotate secrets
+
+8. PDB (POD DISRUPTION BUDGET) ACTIONS:
+   - create: Create PDB
+     Parameters: {{"min_available": "1", "selector": {{"app": "myapp"}}}}
+   - update: Update PDB settings
+   - delete: Delete PDB
+
+9. HEALTH CHECK ACTIONS:
+   - add_liveness: Add liveness probe
+     Parameters: {{"http_get": {{"path": "/health", "port": 8080}}}}
+   - add_readiness: Add readiness probe
+   - add_startup: Add startup probe
+   - update: Update probe settings
+
+10. AFFINITY ACTIONS:
+    - set_pod_affinity: Set pod affinity
+      Parameters: {{"selector": {{"app": "myapp"}}}}
+    - set_pod_anti_affinity: Set pod anti-affinity
+    - set_node_affinity: Set node affinity
 
 RESPONSE FORMAT (JSON only):
 {{

@@ -19,6 +19,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
 type RemediationExecutor struct {
@@ -106,6 +107,29 @@ func (e *RemediationExecutor) ExecuteAction(ctx context.Context, pod *corev1.Pod
 		return e.executeStatefulSetAction(actionCtx, pod, action)
 	case "node":
 		return e.executeNodeAction(actionCtx, pod, action)
+	case "service":
+		actionExecutor := NewActionExecutor(e.k8sClient)
+		return actionExecutor.ExecuteServiceAction(actionCtx, action, pod.Namespace)
+	case "configmap":
+		actionExecutor := NewActionExecutor(e.k8sClient)
+		return actionExecutor.ExecuteConfigMapAction(actionCtx, action, pod.Namespace)
+	case "secret":
+		actionExecutor := NewActionExecutor(e.k8sClient)
+		return actionExecutor.ExecuteSecretAction(actionCtx, action, pod.Namespace)
+	case "pdb":
+		actionExecutor := NewActionExecutor(e.k8sClient)
+		return actionExecutor.ExecutePDBAction(actionCtx, action, pod.Namespace)
+	case "health_check":
+		deployment, _ := e.findDeploymentForPod(actionCtx, pod)
+		actionExecutor := NewActionExecutor(e.k8sClient)
+		return actionExecutor.ExecuteHealthCheckAction(actionCtx, action, pod, deployment)
+	case "affinity":
+		deployment, err := e.findDeploymentForPod(actionCtx, pod)
+		if err != nil {
+			return fmt.Errorf("deployment required for affinity actions: %w", err)
+		}
+		actionExecutor := NewActionExecutor(e.k8sClient)
+		return actionExecutor.ExecuteAffinityAction(actionCtx, action, deployment)
 	default:
 		return fmt.Errorf("unsupported action type: %s", action.Type)
 	}
@@ -149,6 +173,85 @@ func (e *RemediationExecutor) executePodAction(ctx context.Context, pod *corev1.
 		}
 
 		e.logger.Infof("✅ Pod deleted successfully")
+		return nil
+
+	case "force_delete":
+		gracePeriod := int64(0)
+		deleteOpts := metav1.DeleteOptions{
+			GracePeriodSeconds: &gracePeriod,
+		}
+		err := e.k8sClient.Clientset().CoreV1().Pods(pod.Namespace).Delete(ctx, pod.Name, deleteOpts)
+		if err != nil {
+			return fmt.Errorf("failed to force delete pod: %w", err)
+		}
+		e.logger.Infof("✅ Pod force deleted successfully")
+		return nil
+
+	case "evict":
+		gracePeriod := int64(30)
+		if gpParam, hasGracePeriod := action.Parameters["grace_period_seconds"]; hasGracePeriod {
+			validatedGracePeriod, err := ValidateGracePeriod(gpParam)
+			if err != nil {
+				return fmt.Errorf("invalid grace_period_seconds: %w", err)
+			}
+			gracePeriod = validatedGracePeriod
+		}
+		eviction := &policyv1.Eviction{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      pod.Name,
+				Namespace: pod.Namespace,
+			},
+			DeleteOptions: &metav1.DeleteOptions{
+				GracePeriodSeconds: &gracePeriod,
+			},
+		}
+		err := e.k8sClient.Clientset().CoreV1().Pods(pod.Namespace).EvictV1(ctx, eviction)
+		if err != nil {
+			return fmt.Errorf("failed to evict pod: %w", err)
+		}
+		e.logger.Infof("✅ Pod evicted successfully")
+		return nil
+
+	case "recreate":
+		// Delete and let controller recreate
+		gracePeriod := int64(30)
+		deleteOpts := metav1.DeleteOptions{GracePeriodSeconds: &gracePeriod}
+		err := e.k8sClient.Clientset().CoreV1().Pods(pod.Namespace).Delete(ctx, pod.Name, deleteOpts)
+		if err != nil {
+			return fmt.Errorf("failed to recreate pod: %w", err)
+		}
+		e.logger.Infof("✅ Pod recreated successfully")
+		return nil
+
+	case "cordon":
+		// Mark pod's node as unschedulable (if we have node access)
+		if pod.Spec.NodeName != "" {
+			node, err := e.k8sClient.Clientset().CoreV1().Nodes().Get(ctx, pod.Spec.NodeName, metav1.GetOptions{})
+			if err != nil {
+				return fmt.Errorf("failed to get node for cordon: %w", err)
+			}
+			node.Spec.Unschedulable = true
+			_, err = e.k8sClient.Clientset().CoreV1().Nodes().Update(ctx, node, metav1.UpdateOptions{})
+			if err != nil {
+				return fmt.Errorf("failed to cordon node: %w", err)
+			}
+			e.logger.Infof("✅ Node cordoned successfully")
+		}
+		return nil
+
+	case "uncordon":
+		if pod.Spec.NodeName != "" {
+			node, err := e.k8sClient.Clientset().CoreV1().Nodes().Get(ctx, pod.Spec.NodeName, metav1.GetOptions{})
+			if err != nil {
+				return fmt.Errorf("failed to get node for uncordon: %w", err)
+			}
+			node.Spec.Unschedulable = false
+			_, err = e.k8sClient.Clientset().CoreV1().Nodes().Update(ctx, node, metav1.UpdateOptions{})
+			if err != nil {
+				return fmt.Errorf("failed to uncordon node: %w", err)
+			}
+			e.logger.Infof("✅ Node uncordoned successfully")
+		}
 		return nil
 
 	default:
@@ -393,6 +496,309 @@ func (e *RemediationExecutor) executeDeploymentAction(ctx context.Context, pod *
 		e.logger.Infof("✅ Rollout restarted successfully")
 		return nil
 
+	case "scale_up":
+		replicas := int32(1)
+		if rParam, hasReplicas := action.Parameters["replicas"]; hasReplicas {
+			validatedReplicas, err := ValidateReplicas(rParam, 1, 100)
+			if err != nil {
+				return fmt.Errorf("invalid replicas: %w", err)
+			}
+			replicas = validatedReplicas
+		}
+		currentReplicas := *deployment.Spec.Replicas
+		newReplicas := currentReplicas + replicas
+		if newReplicas > 100 {
+			newReplicas = 100
+		}
+		e.logger.Infof("Scaling up deployment %s/%s: %d → %d replicas", deployment.Namespace, deployment.Name, currentReplicas, newReplicas)
+		deployment.Spec.Replicas = &newReplicas
+		_, err = e.k8sClient.Clientset().AppsV1().Deployments(deployment.Namespace).Update(ctx, deployment, metav1.UpdateOptions{})
+		if err != nil {
+			return fmt.Errorf("failed to scale up deployment: %w", err)
+		}
+		e.logger.Infof("✅ Deployment scaled up successfully")
+		return nil
+
+	case "scale_down":
+		replicas := int32(1)
+		if rParam, hasReplicas := action.Parameters["replicas"]; hasReplicas {
+			validatedReplicas, err := ValidateReplicas(rParam, 1, 100)
+			if err != nil {
+				return fmt.Errorf("invalid replicas: %w", err)
+			}
+			replicas = validatedReplicas
+		}
+		currentReplicas := *deployment.Spec.Replicas
+		newReplicas := currentReplicas - replicas
+		if newReplicas < 1 {
+			newReplicas = 1
+		}
+		e.logger.Infof("Scaling down deployment %s/%s: %d → %d replicas", deployment.Namespace, deployment.Name, currentReplicas, newReplicas)
+		deployment.Spec.Replicas = &newReplicas
+		_, err = e.k8sClient.Clientset().AppsV1().Deployments(deployment.Namespace).Update(ctx, deployment, metav1.UpdateOptions{})
+		if err != nil {
+			return fmt.Errorf("failed to scale down deployment: %w", err)
+		}
+		e.logger.Infof("✅ Deployment scaled down successfully")
+		return nil
+
+	case "scale_to":
+		replicas := int32(1)
+		if rParam, hasReplicas := action.Parameters["replicas"]; hasReplicas {
+			validatedReplicas, err := ValidateReplicas(rParam, 1, 100)
+			if err != nil {
+				return fmt.Errorf("invalid replicas: %w", err)
+			}
+			replicas = validatedReplicas
+		}
+		currentReplicas := *deployment.Spec.Replicas
+		e.logger.Infof("Scaling deployment %s/%s to %d replicas (from %d)", deployment.Namespace, deployment.Name, replicas, currentReplicas)
+		deployment.Spec.Replicas = &replicas
+		_, err = e.k8sClient.Clientset().AppsV1().Deployments(deployment.Namespace).Update(ctx, deployment, metav1.UpdateOptions{})
+		if err != nil {
+			return fmt.Errorf("failed to scale deployment: %w", err)
+		}
+		e.logger.Infof("✅ Deployment scaled successfully")
+		return nil
+
+	case "decrease_memory":
+		factor := 0.8
+		if fParam, hasFactor := action.Parameters["factor"]; hasFactor {
+			validatedFactor, err := ValidateFactor(fParam, 0.1, 5.0)
+			if err != nil {
+				return fmt.Errorf("invalid factor: %w", err)
+			}
+			factor = validatedFactor
+		}
+		if len(deployment.Spec.Template.Spec.Containers) == 0 {
+			return fmt.Errorf("deployment has no containers")
+		}
+		e.logger.Infof("Decreasing memory by %.0f%% for deployment %s/%s", (1-factor)*100, deployment.Namespace, deployment.Name)
+		if err := updateContainerResources(
+			deployment.Spec.Template.Spec.Containers,
+			"memory",
+			factor,
+			"512Mi",
+			"500m",
+			e.logger,
+		); err != nil {
+			return fmt.Errorf("failed to update container resources: %w", err)
+		}
+		_, err = e.k8sClient.Clientset().AppsV1().Deployments(deployment.Namespace).Update(ctx, deployment, metav1.UpdateOptions{})
+		if err != nil {
+			return fmt.Errorf("failed to update deployment memory: %w", err)
+		}
+		e.logger.Infof("✅ Memory decreased successfully")
+		return nil
+
+	case "decrease_cpu":
+		factor := 0.8
+		if fParam, hasFactor := action.Parameters["factor"]; hasFactor {
+			validatedFactor, err := ValidateFactor(fParam, 0.1, 5.0)
+			if err != nil {
+				return fmt.Errorf("invalid factor: %w", err)
+			}
+			factor = validatedFactor
+		}
+		if len(deployment.Spec.Template.Spec.Containers) == 0 {
+			return fmt.Errorf("deployment has no containers")
+		}
+		e.logger.Infof("Decreasing CPU by %.0f%% for deployment %s/%s", (1-factor)*100, deployment.Namespace, deployment.Name)
+		if err := updateContainerResources(
+			deployment.Spec.Template.Spec.Containers,
+			"cpu",
+			factor,
+			"1Gi",
+			"500m",
+			e.logger,
+		); err != nil {
+			return fmt.Errorf("failed to update container resources: %w", err)
+		}
+		_, err = e.k8sClient.Clientset().AppsV1().Deployments(deployment.Namespace).Update(ctx, deployment, metav1.UpdateOptions{})
+		if err != nil {
+			return fmt.Errorf("failed to update deployment CPU: %w", err)
+		}
+		e.logger.Infof("✅ CPU decreased successfully")
+		return nil
+
+	case "pause":
+		e.logger.Infof("Pausing deployment %s/%s", deployment.Namespace, deployment.Name)
+		// Set replicas to 0 to pause
+		zeroReplicas := int32(0)
+		deployment.Spec.Replicas = &zeroReplicas
+		_, err = e.k8sClient.Clientset().AppsV1().Deployments(deployment.Namespace).Update(ctx, deployment, metav1.UpdateOptions{})
+		if err != nil {
+			return fmt.Errorf("failed to pause deployment: %w", err)
+		}
+		e.logger.Infof("✅ Deployment paused successfully")
+		return nil
+
+	case "resume":
+		e.logger.Infof("Resuming deployment %s/%s", deployment.Namespace, deployment.Name)
+		// Restore to previous replica count or default to 1
+		if deployment.Spec.Replicas == nil || *deployment.Spec.Replicas == 0 {
+			oneReplica := int32(1)
+			deployment.Spec.Replicas = &oneReplica
+		}
+		_, err = e.k8sClient.Clientset().AppsV1().Deployments(deployment.Namespace).Update(ctx, deployment, metav1.UpdateOptions{})
+		if err != nil {
+			return fmt.Errorf("failed to resume deployment: %w", err)
+		}
+		e.logger.Infof("✅ Deployment resumed successfully")
+		return nil
+
+	case "set_resources":
+		if len(deployment.Spec.Template.Spec.Containers) == 0 {
+			return fmt.Errorf("deployment has no containers")
+		}
+		cpuParam, hasCPU := action.Parameters["cpu"]
+		memoryParam, hasMemory := action.Parameters["memory"]
+		if !hasCPU && !hasMemory {
+			return fmt.Errorf("at least one of cpu or memory must be specified")
+		}
+		e.logger.Infof("Setting resources for deployment %s/%s", deployment.Namespace, deployment.Name)
+		for i := range deployment.Spec.Template.Spec.Containers {
+			container := &deployment.Spec.Template.Spec.Containers[i]
+			if container.Resources.Limits == nil {
+				container.Resources.Limits = corev1.ResourceList{}
+			}
+			if container.Resources.Requests == nil {
+				container.Resources.Requests = corev1.ResourceList{}
+			}
+			if hasCPU {
+				if cpuStr, ok := cpuParam.(string); ok {
+					cpuQty, err := resource.ParseQuantity(cpuStr)
+					if err != nil {
+						return fmt.Errorf("invalid cpu value: %w", err)
+					}
+					container.Resources.Limits[corev1.ResourceCPU] = cpuQty
+					container.Resources.Requests[corev1.ResourceCPU] = cpuQty
+					e.logger.Infof("  Container %s: CPU set to %s", container.Name, cpuStr)
+				}
+			}
+			if hasMemory {
+				if memoryStr, ok := memoryParam.(string); ok {
+					memoryQty, err := resource.ParseQuantity(memoryStr)
+					if err != nil {
+						return fmt.Errorf("invalid memory value: %w", err)
+					}
+					container.Resources.Limits[corev1.ResourceMemory] = memoryQty
+					container.Resources.Requests[corev1.ResourceMemory] = memoryQty
+					e.logger.Infof("  Container %s: Memory set to %s", container.Name, memoryStr)
+				}
+			}
+		}
+		_, err = e.k8sClient.Clientset().AppsV1().Deployments(deployment.Namespace).Update(ctx, deployment, metav1.UpdateOptions{})
+		if err != nil {
+			return fmt.Errorf("failed to set deployment resources: %w", err)
+		}
+		e.logger.Infof("✅ Resources set successfully")
+		return nil
+
+	case "remove_limits":
+		if len(deployment.Spec.Template.Spec.Containers) == 0 {
+			return fmt.Errorf("deployment has no containers")
+		}
+		e.logger.Infof("Removing resource limits for deployment %s/%s", deployment.Namespace, deployment.Name)
+		for i := range deployment.Spec.Template.Spec.Containers {
+			container := &deployment.Spec.Template.Spec.Containers[i]
+			container.Resources.Limits = nil
+			e.logger.Infof("  Container %s: Limits removed", container.Name)
+		}
+		_, err = e.k8sClient.Clientset().AppsV1().Deployments(deployment.Namespace).Update(ctx, deployment, metav1.UpdateOptions{})
+		if err != nil {
+			return fmt.Errorf("failed to remove deployment limits: %w", err)
+		}
+		e.logger.Infof("✅ Limits removed successfully")
+		return nil
+
+	case "change_strategy":
+		strategyParam, hasStrategy := action.Parameters["strategy"]
+		if !hasStrategy {
+			return fmt.Errorf("strategy parameter is required")
+		}
+		strategyStr, ok := strategyParam.(string)
+		if !ok {
+			return fmt.Errorf("strategy must be a string")
+		}
+		var strategy appsv1.DeploymentStrategyType
+		switch strategyStr {
+		case "Recreate":
+			strategy = appsv1.RecreateDeploymentStrategyType
+		case "RollingUpdate", "Rolling":
+			strategy = appsv1.RollingUpdateDeploymentStrategyType
+		default:
+			return fmt.Errorf("invalid strategy: %s (must be Recreate or RollingUpdate)", strategyStr)
+		}
+		e.logger.Infof("Changing deployment strategy to %s for %s/%s", strategyStr, deployment.Namespace, deployment.Name)
+		if deployment.Spec.Strategy.Type == strategy {
+			e.logger.Infof("Strategy already set to %s", strategyStr)
+			return nil
+		}
+		deployment.Spec.Strategy.Type = strategy
+		_, err = e.k8sClient.Clientset().AppsV1().Deployments(deployment.Namespace).Update(ctx, deployment, metav1.UpdateOptions{})
+		if err != nil {
+			return fmt.Errorf("failed to change deployment strategy: %w", err)
+		}
+		e.logger.Infof("✅ Strategy changed successfully")
+		return nil
+
+	case "set_max_surge":
+		surgeParam, hasSurge := action.Parameters["max_surge"]
+		if !hasSurge {
+			return fmt.Errorf("max_surge parameter is required")
+		}
+		surgeStr, ok := surgeParam.(string)
+		if !ok {
+			return fmt.Errorf("max_surge must be a string (e.g., '25%%' or '2')")
+		}
+		e.logger.Infof("Setting max surge to %s for deployment %s/%s", surgeStr, deployment.Namespace, deployment.Name)
+		if deployment.Spec.Strategy.RollingUpdate == nil {
+			deployment.Spec.Strategy.RollingUpdate = &appsv1.RollingUpdateDeployment{}
+		}
+		surgeIntOrString := intstr.FromString(surgeStr)
+		deployment.Spec.Strategy.RollingUpdate.MaxSurge = &surgeIntOrString
+		_, err = e.k8sClient.Clientset().AppsV1().Deployments(deployment.Namespace).Update(ctx, deployment, metav1.UpdateOptions{})
+		if err != nil {
+			return fmt.Errorf("failed to set max surge: %w", err)
+		}
+		e.logger.Infof("✅ Max surge set successfully")
+		return nil
+
+	case "set_max_unavailable":
+		unavailableParam, hasUnavailable := action.Parameters["max_unavailable"]
+		if !hasUnavailable {
+			return fmt.Errorf("max_unavailable parameter is required")
+		}
+		unavailableStr, ok := unavailableParam.(string)
+		if !ok {
+			return fmt.Errorf("max_unavailable must be a string (e.g., '25%%' or '1')")
+		}
+		e.logger.Infof("Setting max unavailable to %s for deployment %s/%s", unavailableStr, deployment.Namespace, deployment.Name)
+		if deployment.Spec.Strategy.RollingUpdate == nil {
+			deployment.Spec.Strategy.RollingUpdate = &appsv1.RollingUpdateDeployment{}
+		}
+		unavailableIntOrString := intstr.FromString(unavailableStr)
+		deployment.Spec.Strategy.RollingUpdate.MaxUnavailable = &unavailableIntOrString
+		_, err = e.k8sClient.Clientset().AppsV1().Deployments(deployment.Namespace).Update(ctx, deployment, metav1.UpdateOptions{})
+		if err != nil {
+			return fmt.Errorf("failed to set max unavailable: %w", err)
+		}
+		e.logger.Infof("✅ Max unavailable set successfully")
+		return nil
+
+	case "undo":
+		// Undo last change by rolling back
+		e.logger.Infof("Undoing last change for deployment %s/%s", deployment.Namespace, deployment.Name)
+		// This is essentially a rollback
+		return e.executeDeploymentAction(ctx, pod, RemediationAction{
+			Type:       "deployment",
+			Target:     deployment.Name,
+			Operation:  "rollback_deployment",
+			Parameters: map[string]interface{}{},
+			Order:      action.Order,
+		})
+
 	case "rollback_deployment":
 		e.logger.Infof("Rolling back deployment %s/%s", deployment.Namespace, deployment.Name)
 
@@ -406,7 +812,7 @@ func (e *RemediationExecutor) executeDeploymentAction(ctx context.Context, pod *
 		healthCheckStart := time.Now()
 		testCtx, testCancel := context.WithTimeout(ctx, 5*time.Second)
 		defer testCancel()
-		
+
 		// Check context cancellation before health check
 		select {
 		case <-ctx.Done():
@@ -414,13 +820,13 @@ func (e *RemediationExecutor) executeDeploymentAction(ctx context.Context, pod *
 			return fmt.Errorf("context cancelled before deployment history health check: %w", ctx.Err())
 		default:
 		}
-		
+
 		_, testErr := e.k8sClient.Clientset().AppsV1().ReplicaSets(deployment.Namespace).List(testCtx, metav1.ListOptions{
 			Limit: 1,
 		})
 		healthCheckDuration := time.Since(healthCheckStart)
 		metrics.DeploymentHistoryAPICheckDuration.WithLabelValues(deployment.Namespace).Observe(healthCheckDuration.Seconds())
-		
+
 		if testErr != nil {
 			// Check if error is due to API unavailability
 			metrics.DeploymentHistoryAPIHealth.WithLabelValues(deployment.Namespace).Set(0)
@@ -458,7 +864,7 @@ func (e *RemediationExecutor) executeDeploymentAction(ctx context.Context, pod *
 		// Improved logic: find the most recent non-active replicaset
 		var previousRS *appsv1.ReplicaSet
 		var currentRS *appsv1.ReplicaSet
-		
+
 		// First, identify the current active replicaset
 		for i := range replicaSets.Items {
 			rs := &replicaSets.Items[i]
@@ -467,7 +873,7 @@ func (e *RemediationExecutor) executeDeploymentAction(ctx context.Context, pod *
 				break
 			}
 		}
-		
+
 		// Then find the most recent previous replicaset
 		for i := range replicaSets.Items {
 			rs := &replicaSets.Items[i]
@@ -487,12 +893,12 @@ func (e *RemediationExecutor) executeDeploymentAction(ctx context.Context, pod *
 		if previousRS == nil {
 			// Fallback strategy: Try to use deployment annotations or labels to find previous version
 			e.logger.Warn("Could not find previous replicaset via revision history")
-			
+
 			// Validate revision history limit
 			if deployment.Spec.RevisionHistoryLimit != nil && *deployment.Spec.RevisionHistoryLimit == 0 {
 				return fmt.Errorf("rollback failed: deployment %s/%s has revisionHistoryLimit set to 0, preventing rollback. Set revisionHistoryLimit > 0 to enable rollback", deployment.Namespace, deployment.Name)
 			}
-			
+
 			// Check if deployment has any annotations that might indicate previous version
 			if deployment.Annotations != nil {
 				if prevImage, hasPrevImage := deployment.Annotations["deployment.kubernetes.io/previous-image"]; hasPrevImage {
@@ -513,7 +919,7 @@ func (e *RemediationExecutor) executeDeploymentAction(ctx context.Context, pod *
 					return nil
 				}
 			}
-			
+
 			// If no fallback strategy works, return error with helpful message
 			return fmt.Errorf("rollback failed: no previous revision found for deployment %s/%s. Ensure deployment has revisionHistoryLimit > 0 (current: %v) and deployment history is available. Deployment may be new or history was cleaned up", deployment.Namespace, deployment.Name, deployment.Spec.RevisionHistoryLimit)
 		}
@@ -1211,7 +1617,7 @@ func (e *RemediationExecutor) checkResourceQuota(ctx context.Context, namespace,
 					return fmt.Errorf("context cancelled during quota calculation: %w", ctx.Err())
 				default:
 				}
-				
+
 				for _, container := range pod.Spec.Containers {
 					var containerResource resource.Quantity
 					switch resourceType {

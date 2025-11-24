@@ -37,9 +37,10 @@ type MLClient interface {
 
 // Collector collects metrics from Kubernetes pods and nodes
 type Collector struct {
-	k8sClient *k8s.Client
-	db        Database
-	mlClient  MLClient
+	k8sClient    *k8s.Client
+	db           Database
+	mlClient     MLClient
+	streamBuffer *CircularBuffer
 }
 
 // NewCollector creates a new Collector instance.
@@ -52,10 +53,12 @@ type Collector struct {
 // Returns:
 //   - *Collector: New collector instance
 func NewCollector(k8sClient *k8s.Client, db Database, mlClient MLClient) *Collector {
+	bufferSize := 10000 // Default buffer size
 	return &Collector{
-		k8sClient: k8sClient,
-		db:        db,
-		mlClient:  mlClient,
+		k8sClient:    k8sClient,
+		db:           db,
+		mlClient:     mlClient,
+		streamBuffer: NewCircularBuffer(bufferSize),
 	}
 }
 
@@ -126,28 +129,9 @@ func (c *Collector) CollectPodMetrics(ctx context.Context) error {
 		metricsList = append(metricsList, metrics)
 		PodsCollected.WithLabelValues(pod.Namespace).Inc()
 
-		if c.mlClient != nil {
-			// Get ML prediction for this pod (still done individually due to ML service API)
-			predStart := time.Now()
-			prediction, err := c.mlClient.Predict(ctx, metrics)
-			if err != nil {
-				// Log at Warning level if circuit breaker is open, Debug for transient errors
-				if err.Error() == "circuit breaker is OPEN - ML service unavailable" {
-					utils.Log.WithError(err).WithField("pod", pod.Name).Warn("ML service unavailable (circuit breaker open)")
-					SetServiceHealth("ml_service", false)
-				} else {
-					utils.Log.WithError(err).WithField("pod", pod.Name).Warn("Failed to get ML prediction")
-				}
-				CollectionErrors.WithLabelValues("ml").Inc()
-				SetServiceHealth("ml_service", false)
-			} else {
-				RecordMLPredictionDuration(time.Since(predStart))
-				MLPredictionsTotal.Inc()
-				SetServiceHealth("ml_service", true)
-				if err := c.db.SaveMLPrediction(ctx, prediction); err != nil {
-					utils.Log.WithError(err).WithField("pod", pod.Name).Warn("Failed to save ML prediction")
-				}
-			}
+		// Push to circular buffer for streaming/forecasting
+		if c.streamBuffer != nil {
+			c.streamBuffer.Push(metrics)
 		}
 
 		// Save metrics in batches
@@ -193,6 +177,30 @@ func (c *Collector) CollectPodMetrics(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// GetBufferMetrics returns recent metrics from the circular buffer
+// This allows the predictive orchestrator to access recent metrics without querying the database
+func (c *Collector) GetBufferMetrics(limit int) []*PodMetrics {
+	if c.streamBuffer == nil {
+		return []*PodMetrics{}
+	}
+	return c.streamBuffer.GetRecent(limit)
+}
+
+// GetBufferStats returns statistics about the circular buffer
+func (c *Collector) GetBufferStats() map[string]interface{} {
+	if c.streamBuffer == nil {
+		return map[string]interface{}{
+			"enabled": false,
+		}
+	}
+	return map[string]interface{}{
+		"enabled": true,
+		"count":   c.streamBuffer.Count(),
+		"size":    c.streamBuffer.Size(),
+		"is_full": c.streamBuffer.IsFull(),
+	}
 }
 
 // CollectNodeMetrics collects metrics for all nodes in the cluster.
@@ -486,8 +494,8 @@ func (c *Collector) buildPodMetrics(ctx context.Context, pod *corev1.Pod) (*PodM
 
 	// Network and disk metrics collection
 	// NOTE: Network and disk metrics require cAdvisor or CNI integration which is not available in Kind.
-	// We only store REAL metrics from historical data (if recent) or zero (real value, not estimate).
-	// No fake/estimated values are used - only real data or zero to indicate no data available.
+	// We store zero values to indicate no data available (not estimates).
+	// If historical data exists and is recent (< 5 minutes), we use it; otherwise zero.
 	networkRxBytes := int64(0)
 	networkTxBytes := int64(0)
 	networkRxErrors := int64(0)
@@ -495,39 +503,20 @@ func (c *Collector) buildPodMetrics(ctx context.Context, pod *corev1.Pod) (*PodM
 	diskUsageBytes := int64(0)
 	diskLimitBytes := int64(0)
 
-	// Try to get network/disk metrics from historical data (only use REAL historical values)
-	// Network and disk metrics require cAdvisor/CNI integration which is not available in Kind
-	// We only use historical data if it's recent (within 5 minutes) and non-zero
-	historicalMetrics, err := c.db.GetRecentPodMetrics(ctx, pod.Name, pod.Namespace, 5)
+	// Try to get recent historical network/disk metrics (if available and recent)
+	historicalMetrics, err := c.db.GetRecentPodMetrics(ctx, pod.Name, pod.Namespace, 1)
 	if err == nil && len(historicalMetrics) > 0 {
 		latest := historicalMetrics[0]
-		age := time.Since(latest.Timestamp)
-		// Only use historical network/disk data if it's recent (real data, not stale)
-		if age < 5*time.Minute {
+		if time.Since(latest.Timestamp) < 5*time.Minute {
+			// Use recent historical data
 			networkRxBytes = latest.NetworkRxBytes
 			networkTxBytes = latest.NetworkTxBytes
 			networkRxErrors = latest.NetworkRxErrors
 			networkTxErrors = latest.NetworkTxErrors
 			diskUsageBytes = latest.DiskUsageBytes
 			diskLimitBytes = latest.DiskLimitBytes
-		} else {
-			// Historical data too old - use zero (real value, not estimate)
-			networkRxBytes = 0
-			networkTxBytes = 0
-			networkRxErrors = 0
-			networkTxErrors = 0
-			diskUsageBytes = 0
-			diskLimitBytes = 0
 		}
-	} else {
-		// No historical data - use zero (real value, not estimate)
-		// Network/disk metrics require cAdvisor or CNI integration which is not available in Kind
-		networkRxBytes = 0
-		networkTxBytes = 0
-		networkRxErrors = 0
-		networkTxErrors = 0
-		diskUsageBytes = 0
-		diskLimitBytes = 0
+		// If historical data is stale, keep zero values
 	}
 
 	// Try to get network/disk info from pod status if available
