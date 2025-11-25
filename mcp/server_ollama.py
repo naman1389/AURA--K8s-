@@ -111,7 +111,10 @@ if GEMINI_AVAILABLE:
     if GEMINI_API_KEY:
         try:
             genai.configure(api_key=GEMINI_API_KEY)
-            GEMINI_MODEL = genai.GenerativeModel('gemini-pro')
+            # Use gemini-2.5-flash (best available, provides excellent quality)
+            # Pro models require different API key (current key works with Flash)
+            GEMINI_MODEL = genai.GenerativeModel('gemini-2.5-flash')
+            logger.info("✅ Using Gemini 2.5 Flash model (enhanced prompts for high-quality responses)")
             logger.info("✅ Gemini API configured")
         except Exception as e:
             logger.warning(f"⚠️  Gemini API configuration failed: {e}")
@@ -381,10 +384,15 @@ async def health_check(request: Request):
     if not ollama_healthy:
         healthy = False
     if not model_available:
-        # Model not loaded is CRITICAL - service cannot generate remediation plans without model
-        # Make this a hard requirement for service health
-        healthy = False
-        logger.error(f"CRITICAL: Ollama model {OLLAMA_MODEL} not available - service cannot generate remediation plans")
+        # Model not loaded - check if Gemini is available as fallback
+        if GEMINI_MODEL:
+            logger.warning(f"Ollama model {OLLAMA_MODEL} not available, but Gemini is configured as fallback")
+            details["fallback"] = "Gemini available"
+            # Service can still work with Gemini fallback
+        else:
+            # No fallback available - this is critical
+            healthy = False
+            logger.error(f"CRITICAL: Ollama model {OLLAMA_MODEL} not available and no Gemini fallback - service cannot generate remediation plans")
     
     # Standardize response format to match ML service
     response = {
@@ -499,28 +507,74 @@ async def analyze_with_plan_v1(request: Request, analysis_request: IssueAnalysis
             else:
                 # Fallback to original AI-based planning
                 # Try Ollama first (cost-effective), fallback to Gemini if Ollama fails
+                ai_response = None
+                ai_source = None
+                
+                # Attempt 1: Try Ollama
                 try:
-                    logger.info("Using Ollama for issue analysis (cost-effective)")
+                    logger.info("🤖 Attempting AI remediation with Ollama (primary)")
                     ai_response = await call_ollama(prompt)
+                    ai_source = "Ollama"
+                    logger.info("✅ Ollama successfully generated remediation plan")
                 except Exception as ollama_err:
-                    logger.warning(f"Ollama failed: {ollama_err}, falling back to Gemini")
+                    logger.warning(f"⚠️  Ollama failed: {ollama_err}")
+                    
+                    # Attempt 2: Fallback to Gemini if Ollama fails
                     if GEMINI_MODEL:
-                        logger.info("Using Gemini API as fallback")
-                    ai_response = await call_gemini(prompt)
-                else:
-                        logger.error("Both Ollama and Gemini unavailable")
-                        raise
+                        logger.info("🔄 Falling back to Gemini API")
+                        try:
+                            ai_response = await call_gemini(prompt)
+                            ai_source = "Gemini"
+                            logger.info("✅ Gemini successfully generated remediation plan")
+                        except Exception as gemini_err:
+                            logger.error(f"❌ Gemini also failed: {gemini_err}")
+                            raise Exception("Both Ollama and Gemini unavailable") from gemini_err
+                    else:
+                        logger.error("❌ Both Ollama and Gemini unavailable (Gemini not configured)")
+                        raise Exception("Both Ollama and Gemini unavailable") from ollama_err
                 
-                plan = parse_remediation_plan(ai_response)
+                # Parse and validate the AI response
+                if not ai_response:
+                    raise Exception("No AI response received")
                 
-                validate_plan(plan)
-                
-                return RemediationPlan(
-                    actions=plan.get("actions", []),
-                    reasoning=plan.get("reasoning", "AI-generated remediation plan"),
-                    confidence=plan.get("confidence", 0.75),
-                    risk_level=plan.get("risk_level", "medium")
-                )
+                try:
+                    plan = parse_remediation_plan(ai_response)
+                    validate_plan(plan)
+                    
+                    # Add AI source to reasoning for tracking
+                    original_reasoning = plan.get("reasoning", "AI-generated remediation plan")
+                    if ai_source:
+                        plan["reasoning"] = f"[{ai_source}] {original_reasoning}"
+                    
+                    logger.info(f"✅ AI remediation plan validated successfully (source: {ai_source})")
+                    
+                    return RemediationPlan(
+                        actions=plan.get("actions", []),
+                        reasoning=plan.get("reasoning", "AI-generated remediation plan"),
+                        confidence=plan.get("confidence", 0.75),
+                        risk_level=plan.get("risk_level", "medium")
+                    )
+                except (ValueError, KeyError) as parse_err:
+                    # If parsing/validation fails, try Gemini if we haven't already
+                    if ai_source == "Ollama" and GEMINI_MODEL:
+                        logger.warning(f"⚠️  Ollama plan validation failed: {parse_err}, retrying with Gemini")
+                        try:
+                            ai_response = await call_gemini(prompt)
+                            plan = parse_remediation_plan(ai_response)
+                            validate_plan(plan)
+                            plan["reasoning"] = f"[Gemini-retry] {plan.get('reasoning', 'AI-generated remediation plan')}"
+                            logger.info("✅ Gemini retry successfully generated valid remediation plan")
+                            return RemediationPlan(
+                                actions=plan.get("actions", []),
+                                reasoning=plan.get("reasoning", "AI-generated remediation plan"),
+                                confidence=plan.get("confidence", 0.75),
+                                risk_level=plan.get("risk_level", "medium")
+                            )
+                        except Exception as gemini_retry_err:
+                            logger.error(f"❌ Gemini retry also failed: {gemini_retry_err}")
+                            raise ValueError(f"AI plan validation failed and Gemini retry failed: {parse_err}") from gemini_retry_err
+                    else:
+                        raise ValueError(f"AI plan validation failed: {parse_err}") from parse_err
 
         except httpx.ConnectError as e:
             logger.error(f"AI analysis failed: connection error - {type(e).__name__}: {e}", exc_info=True)
@@ -546,9 +600,23 @@ async def analyze_with_plan_v1(request: Request, analysis_request: IssueAnalysis
             logger.error(f"AI analysis failed: HTTP error {e.response.status_code} - {type(e).__name__}: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail=f"AI service returned HTTP {e.response.status_code}: {str(e)}") from e
         except ValueError as e:
-            # JSON parsing or validation errors
-            logger.error(f"AI analysis failed: validation/parsing error - {type(e).__name__}: {e}", exc_info=True)
-            raise HTTPException(status_code=500, detail=f"AI response validation failed: {str(e)}") from e
+            # JSON parsing or validation errors - try intelligent fallback if AI completely failed
+            error_msg = str(e)
+            if "AI plan validation failed" in error_msg and ("Ollama" in error_msg or "Gemini" in error_msg):
+                # Both AI attempts failed validation - use intelligent fallback
+                logger.error(f"AI analysis failed: validation/parsing error - {type(e).__name__}: {e}", exc_info=True)
+                logger.warning("Both Ollama and Gemini failed validation, using intelligent fallback plan")
+                fallback = get_intelligent_fallback(analysis_request.issue_type, pod_info, deployment)
+                return RemediationPlan(
+                    actions=fallback["actions"],
+                    reasoning=f"[Fallback] {fallback['reasoning']}",
+                    confidence=fallback["confidence"],
+                    risk_level=fallback["risk_level"]
+                )
+            else:
+                # Other validation errors - return error
+                logger.error(f"AI analysis failed: validation/parsing error - {type(e).__name__}: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=f"AI response validation failed: {str(e)}") from e
         except json.JSONDecodeError as e:
             logger.error(f"AI analysis failed: JSON decode error - {type(e).__name__}: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail=f"Failed to parse AI response JSON: {str(e)}") from e
@@ -686,7 +754,15 @@ DETECTED ERRORS ({len(detected_errors)} total):
 LOGS (last 50 lines):
 {logs[-2000:] if logs else 'No logs available'}
 
-TASK: Analyze this issue and create a detailed remediation plan.
+TASK: Analyze this issue and create a comprehensive, detailed remediation plan. 
+
+IMPORTANT: Provide thorough analysis with:
+1. Root cause identification and analysis
+2. Immediate remediation actions (with detailed reasoning for each)
+3. Long-term prevention strategies
+4. Risk assessment and mitigation
+
+Your reasoning should be detailed and comprehensive (aim for 200+ words). Explain WHY each action is needed, WHAT it will achieve, and HOW it addresses the root cause. Be specific and thorough.
 
 AVAILABLE ACTIONS (50+ actions available):
 
@@ -990,6 +1066,12 @@ def validate_plan_structure(plan: dict) -> bool:
                 raise ValueError(f"Action {i} missing required field: {field}")
             if not isinstance(action[field], str) or len(action[field].strip()) == 0:
                 raise ValueError(f"Action {i} field '{field}' must be a non-empty string")
+        
+        # Ensure order field exists (default to index if missing)
+        if "order" not in action:
+            action["order"] = i
+        elif not isinstance(action["order"], int):
+            action["order"] = i
     
     return True
 
@@ -999,16 +1081,32 @@ def validate_plan(plan: dict):
         raise ValueError("No actions in plan")
     
     valid_types = {"pod", "deployment", "statefulset", "node"}
-    valid_pod_ops = {"restart", "delete"}
+    valid_pod_ops = {"restart", "delete", "recreate"}  # recreate = delete + recreate
     valid_deploy_ops = {"increase_memory", "increase_cpu", "scale", "update_image", "restart_rollout"}
     valid_ss_ops = {"increase_memory", "increase_cpu"}
     valid_node_ops = {"drain", "uncordon"}
     
+    # Normalize operations (handle hyphens vs underscores)
+    operation_normalizations = {
+        "increase-memory": "increase_memory",
+        "increase-cpu": "increase_cpu",
+        "decrease-memory": "decrease_memory",
+        "decrease-cpu": "decrease_cpu",
+        "restart-rollout": "restart_rollout",
+        "update-image": "update_image",
+        "rollback-deployment": "rollback_deployment",
+    }
+    
     for i, action in enumerate(plan["actions"]):
+        # Normalize operation name
+        op = action.get("operation", "")
+        if op in operation_normalizations:
+            action["operation"] = operation_normalizations[op]
+            op = action["operation"]
+        
         if action.get("type") not in valid_types:
             raise ValueError(f"Action {i}: Invalid type: {action.get('type')}")
         
-        op = action.get("operation")
         if action["type"] == "pod" and op not in valid_pod_ops:
             raise ValueError(f"Action {i}: Invalid pod operation: {op}")
         elif action["type"] == "deployment" and op not in valid_deploy_ops:
@@ -1017,6 +1115,11 @@ def validate_plan(plan: dict):
             raise ValueError(f"Action {i}: Invalid statefulset operation: {op}")
         elif action["type"] == "node" and op not in valid_node_ops:
             raise ValueError(f"Action {i}: Invalid node operation: {op}")
+        
+        # Ensure target is not empty
+        target = action.get("target", "").strip()
+        if not target:
+            raise ValueError(f"Action {i}: target must be a non-empty string")
         
         # Validate required parameters for each operation
         params = action.get("parameters", {})

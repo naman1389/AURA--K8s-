@@ -23,6 +23,39 @@ services:
       - aura-network
     restart: unless-stopped
 
+  # Grafana - Visualization and dashboards
+  # NOTE: Grafana can run in Docker (this service) OR locally
+  # For local: Install Grafana and point it to ./grafana/datasources and ./grafana/dashboards
+  # For Docker: Use this service (recommended for consistency)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: aura-grafana
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_INSTALL_PLUGINS=
+      - GF_SERVER_ROOT_URL=${GRAFANA_ROOT_URL:-http://localhost:3000}
+    volumes:
+      # Datasource provisioning
+      - ./grafana/datasources:/etc/grafana/provisioning/datasources
+      # Dashboard provider config
+      - ./grafana/dashboards/dashboard.yml:/etc/grafana/provisioning/dashboards/dashboard.yml
+      # Actual dashboard JSON files
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    networks:
+      - aura-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
 networks:
   aura-network:
@@ -34,3 +67,4 @@ networks:
 
 volumes:
   timescaledb_data:
+  grafana_data:

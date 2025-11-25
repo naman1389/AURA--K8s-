@@ -29,9 +29,17 @@ PID_DIR = PROJECT_ROOT / '.pids'
 LOG_DIR = PROJECT_ROOT / 'logs'
 
 # Configuration - read from environment variables or config
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://aura:aura_password@localhost:5432/aura_metrics")
-ML_SERVICE_URL = os.getenv("ML_SERVICE_URL", "http://localhost:8001")
-MCP_SERVER_URL = os.getenv("MCP_SERVER_URL", "http://localhost:8000")
+# Use config helper for environment-aware service discovery
+try:
+    from scripts.config_helper import get_database_url, get_service_url
+    DATABASE_URL = get_database_url()
+    ML_SERVICE_URL = get_service_url("ML_SERVICE", "8001")
+    MCP_SERVER_URL = get_service_url("MCP_SERVER", "8000")
+except ImportError:
+    # Fallback if config_helper not available
+    DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://aura:aura_password@localhost:5432/aura_metrics")
+    ML_SERVICE_URL = os.getenv("ML_SERVICE_URL", "http://localhost:8001")
+    MCP_SERVER_URL = os.getenv("MCP_SERVER_URL", "http://localhost:8000")
 
 # Required ports - read from environment or use defaults
 REQUIRED_PORTS_STR = os.getenv("REQUIRED_PORTS", "5432,8000,8001,9090,9091,3000,11434")
@@ -271,13 +279,40 @@ def start_services():
         print(f"\n{Color.BLUE}[ML] Training models (first time only)...{Color.NC}")
         run_command("cd ml/train && ../../venv/bin/python simple_train.py")
     
-    # Import Grafana dashboards
+    # Import Grafana dashboards with retry logic
     print(f"\n{Color.BLUE}[Grafana] Importing dashboards...{Color.NC}")
-    success, output = run_command("python3 scripts/import_grafana_dashboards.py", capture=True)
-    if success:
-        print(f"{Color.GREEN}   ✓ Dashboards imported{Color.NC}")
-    else:
-        print(f"{Color.YELLOW}   ⚠ Dashboard import may have failed (check manually){Color.NC}")
+    dashboard_imported = False
+    max_retries = 5
+    retry_delay = 3
+    
+    for retry in range(max_retries):
+        # Wait for Grafana to be ready
+        if retry > 0:
+            print(f"{Color.YELLOW}   Retrying dashboard import (attempt {retry + 1}/{max_retries})...{Color.NC}")
+            time.sleep(retry_delay)
+        
+        # Check if Grafana is ready
+        grafana_ready = False
+        try:
+            import requests
+            resp = requests.get("http://localhost:3000/api/health", timeout=2)
+            if resp.status_code == 200:
+                grafana_ready = True
+        except:
+            pass
+        
+        if not grafana_ready and retry < max_retries - 1:
+            continue
+        
+        success, output = run_command("python3 scripts/import_grafana_dashboards.py", capture=True)
+        if success:
+            print(f"{Color.GREEN}   ✓ Dashboards imported{Color.NC}")
+            dashboard_imported = True
+            break
+    
+    if not dashboard_imported:
+        print(f"{Color.YELLOW}   ⚠ Dashboard import failed after {max_retries} attempts{Color.NC}")
+        print(f"{Color.YELLOW}   You can import manually later or check Grafana logs{Color.NC}")
     
     # Start services in background
     print(f"\n{Color.BLUE}[Services] Starting all services...{Color.NC}")
@@ -294,6 +329,7 @@ def start_services():
         ("Collector", "./bin/collector", "collector.pid", 9090),
         ("Remediator", "./bin/remediator", "remediator.pid", 9091),
         ("Orchestrator", "./venv/bin/python scripts/orchestrator.py", "orchestrator.pid", None),
+        ("Predictive Orchestrator", "./venv/bin/python scripts/predictive_orchestrator.py", "predictive_orchestrator.pid", None),
     ]
     
     # Only add test data generator if explicitly enabled

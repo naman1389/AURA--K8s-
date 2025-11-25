@@ -1,0 +1,70 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: high-cpu-remedy-test
+  namespace: default
+  labels:
+    app: remedy-test
+    test: remediation
+spec:
+  containers:
+  - name: stress-cpu
+    image: containerstack/cpustress:latest
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "128Mi"
+      limits:
+        cpu: "200m"
+        memory: "256Mi"
+    args:
+    - "--cpu"
+    - "2"
+    - "--timeout"
+    - "0"
+    - "--workers"
+    - "4"
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: memory-leak-remedy-test
+  namespace: default
+  labels:
+    app: remedy-test
+    test: remediation
+spec:
+  containers:
+  - name: memory-stress
+    image: polinux/stress:latest
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "128Mi"
+      limits:
+        cpu: "500m"
+        memory: "512Mi"
+    command: ["stress"]
+    args: ["--vm", "1", "--vm-bytes", "400M", "--vm-hang", "0"]
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: crash-loop-remedy-test
+  namespace: default
+  labels:
+    app: remedy-test
+    test: remediation
+spec:
+  containers:
+  - name: crash-container
+    image: busybox:latest
+    command: ["/bin/sh", "-c"]
+    args: ["sleep 5 && exit 1"]
+    resources:
+      requests:
+        cpu: "50m"
+        memory: "64Mi"
+      limits:
+        cpu: "100m"
+        memory: "128Mi"

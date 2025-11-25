@@ -49,9 +49,40 @@ echo -e "${GREEN}✓ Prerequisites OK${NC}"
 
 # Kubernetes cluster
 echo -e "${BLUE}Setting up Kubernetes cluster...${NC}"
+if ! kind get clusters | grep -q aura-k8s-local 2>/dev/null; then
+    echo -e "${BLUE}Creating Kubernetes cluster...${NC}"
+    kind create cluster --name aura-k8s-local --config configs/kind-cluster-simple.yaml 2>&1 || {
+        echo -e "${RED}✗ Failed to create cluster${NC}"
+        exit 1
+    }
+fi
+
+# Ensure cluster is running
 if ! kubectl cluster-info >/dev/null 2>&1; then
-    if ! kind get clusters | grep -q aura-k8s-local; then
-        kind create cluster --name aura-k8s-local --config configs/kind-cluster-simple.yaml
+    echo -e "${BLUE}Starting Kubernetes cluster...${NC}"
+    docker start aura-k8s-local-control-plane 2>/dev/null || true
+    echo -e "${BLUE}Waiting for cluster to be ready (this may take up to 60 seconds)...${NC}"
+    sleep 10  # Initial wait for container to start
+    for i in {1..30}; do
+        if kubectl cluster-info >/dev/null 2>&1; then
+            echo -e "${GREEN}✓ Kubernetes cluster running${NC}"
+            # Verify nodes are ready
+            if kubectl get nodes >/dev/null 2>&1; then
+                NODE_STATUS=$(kubectl get nodes -o jsonpath='{.items[0].status.conditions[?(@.type=="Ready")].status}' 2>/dev/null)
+                if [ "$NODE_STATUS" = "True" ]; then
+                    echo -e "${GREEN}✓ Kubernetes node is ready${NC}"
+                    break
+                fi
+            fi
+        fi
+        if [ $((i % 5)) -eq 0 ]; then
+            echo -e "${BLUE}  Still waiting... ($i/30)${NC}"
+        fi
+        sleep 2
+    done
+    if ! kubectl cluster-info >/dev/null 2>&1; then
+        echo -e "${YELLOW}⚠ Kubernetes cluster may still be starting, continuing anyway...${NC}"
+        echo -e "${YELLOW}  (Services will retry connection)${NC}"
     fi
 fi
 kubectl config use-context kind-aura-k8s-local 2>/dev/null || true
@@ -121,19 +152,28 @@ for i in {1..30}; do
 done
 
 echo -e "${BLUE}Starting Grafana...${NC}"
-if lsof -ti:3000 >/dev/null 2>&1; then
-    echo -e "${GREEN}✓ Grafana already running on port 3000${NC}"
+# Check if Grafana container exists and is running
+if docker ps | grep -q aura-grafana; then
+    echo -e "${GREEN}✓ Grafana container running${NC}"
+elif docker ps -a | grep -q aura-grafana; then
+    echo -e "${BLUE}Starting existing Grafana container...${NC}"
+    docker start aura-grafana 2>/dev/null || docker-compose up -d grafana
 else
+    echo -e "${BLUE}Creating Grafana container...${NC}"
     docker-compose up -d grafana
-    sleep 5
-    for i in {1..10}; do
-        if curl -s http://localhost:3000/api/health >/dev/null 2>&1; then
+fi
+
+# Wait for Grafana to be ready
+for i in {1..30}; do
+    if curl -sf http://localhost:3000/api/health >/dev/null 2>&1; then
             echo -e "${GREEN}✓ Grafana ready${NC}"
             break
         fi
+    if [ $i -eq 30 ]; then
+        echo -e "${YELLOW}⚠ Grafana taking longer than expected to start${NC}"
+    fi
         sleep 2
     done
-fi
 
 # Database schema
 echo -e "${BLUE}Initializing database schema...${NC}"
@@ -173,33 +213,108 @@ start_service() {
     local cmd=$2
     local pid_file=$3
     local port=$4
+    local max_retries=${5:-3}
     
+    # Kill existing process if running
     if [ -f .pids/$pid_file ]; then
-        kill $(cat .pids/$pid_file) 2>/dev/null || true
+        local old_pid=$(cat .pids/$pid_file 2>/dev/null)
+        if [ -n "$old_pid" ] && ps -p $old_pid >/dev/null 2>&1; then
+            kill $old_pid 2>/dev/null || true
+            sleep 1
+        fi
         rm .pids/$pid_file 2>/dev/null || true
     fi
     
     # Convert name to lowercase for log file
     local log_name=$(echo "$name" | tr '[:upper:]' '[:lower:]' | tr ' ' '-')
+    
+    # Special handling for collector with auto-restart
+    if [ "$name" = "Collector" ]; then
+        # Create wrapper script with auto-restart
+        cat > /tmp/collector-wrapper.sh << 'WRAPPER_EOF'
+#!/bin/bash
+export KUBECONFIG="$1"
+while true; do
+    "$2" 2>&1
+    EXIT_CODE=$?
+    if [ $EXIT_CODE -ne 0 ]; then
+        echo "$(date): Collector exited with code $EXIT_CODE, restarting in 5 seconds..." >> "$3"
+        sleep 5
+    else
+        echo "$(date): Collector exited normally, restarting in 5 seconds..." >> "$3"
+        sleep 5
+    fi
+done
+WRAPPER_EOF
+        chmod +x /tmp/collector-wrapper.sh
+        nohup /tmp/collector-wrapper.sh "$KUBECONFIG" "./bin/collector" "logs/${log_name}.log" > logs/${log_name}.log 2>&1 &
+        local pid=$!
+    else
+        # Start service with proper environment
     nohup bash -c "$cmd" > logs/${log_name}.log 2>&1 &
     local pid=$!
+    fi
+    
     echo $pid > .pids/$pid_file
     
+    # Wait for service to start with retries
+    local started=0
     if [ -n "$port" ]; then
-        for i in {1..15}; do
+        # Service with port - check port is listening
+        for i in {1..30}; do
             if lsof -ti:$port >/dev/null 2>&1; then
-                echo -e "${GREEN}✓ $name started${NC}"
-                return 0
+                # Additional check: try to connect to health endpoint if available
+                if [ "$port" = "8001" ] || [ "$port" = "8000" ] || [ "$port" = "9090" ] || [ "$port" = "9091" ]; then
+                    if curl -sf http://localhost:$port/health >/dev/null 2>&1; then
+                        started=1
+                        break
+                    fi
+                else
+                    started=1
+                    break
+                fi
             fi
             sleep 1
         done
-        echo -e "${YELLOW}⚠ $name may not have started (check logs/${log_name}.log)${NC}"
-    else
-        sleep 3
-        if ps -p $pid >/dev/null 2>&1; then
+        
+        if [ $started -eq 1 ]; then
             echo -e "${GREEN}✓ $name started${NC}"
+            return 0
         else
-            echo -e "${YELLOW}⚠ $name may have failed (check logs/${log_name}.log)${NC}"
+            # Check if process is still running
+            if ps -p $pid >/dev/null 2>&1; then
+                echo -e "${YELLOW}⚠ $name process running but port $port not ready (check logs/${log_name}.log)${NC}"
+            else
+                echo -e "${RED}✗ $name failed to start (check logs/${log_name}.log)${NC}"
+                # Show last few lines of log
+                if [ -f "logs/${log_name}.log" ]; then
+                    echo -e "${YELLOW}  Last log lines:${NC}"
+                    tail -5 "logs/${log_name}.log" | sed 's/^/  /'
+                fi
+                return 1
+            fi
+        fi
+    else
+        # Service without port - check process is running
+        sleep 3
+        for i in {1..10}; do
+        if ps -p $pid >/dev/null 2>&1; then
+                started=1
+                break
+            fi
+            sleep 1
+        done
+        
+        if [ $started -eq 1 ]; then
+            echo -e "${GREEN}✓ $name started${NC}"
+            return 0
+        else
+            echo -e "${RED}✗ $name failed to start (check logs/${log_name}.log)${NC}"
+            if [ -f "logs/${log_name}.log" ]; then
+                echo -e "${YELLOW}  Last log lines:${NC}"
+                tail -5 "logs/${log_name}.log" | sed 's/^/  /'
+            fi
+            return 1
         fi
     fi
 }
@@ -208,14 +323,23 @@ export PYTHONPATH=$(pwd)
 cd $(dirname $0)
 
 # Ensure kubeconfig is set correctly
-if [ -f "$HOME/.kube/config" ]; then
+KUBE_FILE="/tmp/aura-kubeconfig"
+if kind get clusters | grep -q aura-k8s-local 2>/dev/null; then
+    kind get kubeconfig --name aura-k8s-local > "$KUBE_FILE" 2>/dev/null
+    export KUBECONFIG="$KUBE_FILE"
+elif [ -f "$HOME/.kube/config" ]; then
     export KUBECONFIG="$HOME/.kube/config"
-elif [ -f "$(kind get kubeconfig --name aura-k8s-local 2>/dev/null)" ]; then
-    export KUBECONFIG=$(kind get kubeconfig --name aura-k8s-local)
 else
-    kind get kubeconfig --name aura-k8s-local > "$HOME/.kube/config" 2>/dev/null
-    export KUBECONFIG="$HOME/.kube/config"
+    kind get kubeconfig --name aura-k8s-local > "$KUBE_FILE" 2>/dev/null || true
+    export KUBECONFIG="$KUBE_FILE"
 fi
+
+# Verify KUBECONFIG file exists and is valid
+if [ ! -f "$KUBECONFIG" ]; then
+    echo -e "${RED}✗ KUBECONFIG file not found: $KUBECONFIG${NC}"
+    exit 1
+fi
+echo -e "${BLUE}Using KUBECONFIG: $KUBECONFIG${NC}"
 
 # Build Go binaries first to catch compilation errors early
 echo -e "${BLUE}Building Go services...${NC}"
@@ -233,42 +357,100 @@ else
     exit 1
 fi
 
-start_service "ML Service" "source venv/bin/activate && python ml/serve/predictor.py" "ml-service.pid" "8001"
-start_service "MCP Server" "source venv/bin/activate && python mcp/server_ollama.py" "mcp-server.pid" "8000"
-start_service "Collector" "KUBECONFIG=$KUBECONFIG ./bin/collector" "collector.pid" "9090"
-start_service "Remediator" "KUBECONFIG=$KUBECONFIG ./bin/remediator" "remediator.pid" "9091"
-start_service "Orchestrator" "source venv/bin/activate && python scripts/orchestrator.py" "orchestrator.pid" ""
-start_service "Predictive Orchestrator" "source venv/bin/activate && python scripts/predictive_orchestrator.py" "predictive-orchestrator.pid" ""
+# Start services in order with dependencies
+echo -e "${BLUE}Starting ML Service...${NC}"
+if ! start_service "ML Service" "cd $(pwd) && source venv/bin/activate && python ml/serve/predictor.py" "ml-service.pid" "8001"; then
+    echo -e "${YELLOW}⚠ ML Service failed, will retry after other services${NC}"
+fi
+
+echo -e "${BLUE}Starting MCP Server...${NC}"
+if ! start_service "MCP Server" "cd $(pwd) && source venv/bin/activate && python mcp/server_ollama.py" "mcp-server.pid" "8000"; then
+    echo -e "${YELLOW}⚠ MCP Server failed, will retry after other services${NC}"
+fi
+
+echo -e "${BLUE}Starting Collector...${NC}"
+if ! start_service "Collector" "cd $(pwd) && env KUBECONFIG=$KUBECONFIG ./bin/collector" "collector.pid" "9090"; then
+    echo -e "${RED}✗ Collector failed to start${NC}"
+    exit 1
+fi
+
+echo -e "${BLUE}Starting Remediator...${NC}"
+if ! start_service "Remediator" "cd $(pwd) && env KUBECONFIG=$KUBECONFIG METRICS_PORT=9091 ./bin/remediator" "remediator.pid" "9091"; then
+    echo -e "${RED}✗ Remediator failed to start${NC}"
+    exit 1
+fi
+
+echo -e "${BLUE}Starting Orchestrator...${NC}"
+if ! start_service "Orchestrator" "cd $(pwd) && source venv/bin/activate && python scripts/orchestrator.py" "orchestrator.pid" ""; then
+    echo -e "${YELLOW}⚠ Orchestrator failed, will retry${NC}"
+fi
+
+echo -e "${BLUE}Starting Predictive Orchestrator...${NC}"
+if ! start_service "Predictive Orchestrator" "cd $(pwd) && source venv/bin/activate && python scripts/predictive_orchestrator.py" "predictive-orchestrator.pid" ""; then
+    echo -e "${YELLOW}⚠ Predictive Orchestrator failed, will retry${NC}"
+fi
+
+# Retry failed services
+echo -e "${BLUE}Retrying failed services...${NC}"
+sleep 5
+
+if ! curl -sf http://localhost:8001/health >/dev/null 2>&1; then
+    echo -e "${BLUE}Retrying ML Service...${NC}"
+    start_service "ML Service" "cd $(pwd) && source venv/bin/activate && python ml/serve/predictor.py" "ml-service.pid" "8001" || true
+fi
+
+if ! curl -sf http://localhost:8000/health >/dev/null 2>&1; then
+    echo -e "${BLUE}Retrying MCP Server...${NC}"
+    start_service "MCP Server" "cd $(pwd) && source venv/bin/activate && python mcp/server_ollama.py" "mcp-server.pid" "8000" || true
+fi
 
 # Wait for services to initialize
 echo -e "${BLUE}Waiting for services to initialize...${NC}"
-sleep 15
+sleep 10
 
-# Verify services
+# Verify services with retries
 echo -e "${BLUE}Verifying services...${NC}"
-if curl -sf http://localhost:8001/health >/dev/null 2>&1; then
-    echo -e "${GREEN}✓ ML Service healthy${NC}"
-else
-    echo -e "${YELLOW}⚠ ML Service starting...${NC}"
-fi
 
-if curl -sf http://localhost:8000/health >/dev/null 2>&1; then
-    echo -e "${GREEN}✓ MCP Server healthy${NC}"
-else
-    echo -e "${YELLOW}⚠ MCP Server starting...${NC}"
-fi
+verify_service() {
+    local name=$1
+    local url=$2
+    local max_attempts=15
+    
+    for i in $(seq 1 $max_attempts); do
+        if curl -sf "$url" >/dev/null 2>&1; then
+            echo -e "${GREEN}✓ $name healthy${NC}"
+            return 0
+        fi
+        if [ $i -lt $max_attempts ]; then
+            sleep 2
+        fi
+    done
+    echo -e "${YELLOW}⚠ $name not responding (may still be starting)${NC}"
+    return 1
+}
 
-if curl -sf http://localhost:9090/health >/dev/null 2>&1; then
-    echo -e "${GREEN}✓ Collector healthy${NC}"
-else
-    echo -e "${YELLOW}⚠ Collector starting...${NC}"
-fi
+verify_service "ML Service" "http://localhost:8001/health"
+verify_service "MCP Server" "http://localhost:8000/health"
+verify_service "Collector" "http://localhost:9090/health"
+verify_service "Remediator" "http://localhost:9091/health"
 
-if curl -sf http://localhost:9091/health >/dev/null 2>&1; then
-    echo -e "${GREEN}✓ Remediator healthy${NC}"
-else
-    echo -e "${YELLOW}⚠ Remediator starting...${NC}"
-fi
+# Verify processes are running
+echo -e "${BLUE}Verifying processes...${NC}"
+for pid_file in ml-service.pid mcp-server.pid collector.pid remediator.pid orchestrator.pid predictive-orchestrator.pid; do
+    if [ -f .pids/$pid_file ]; then
+        pid=$(cat .pids/$pid_file 2>/dev/null)
+        if [ -n "$pid" ] && ps -p $pid >/dev/null 2>&1; then
+            name=$(echo $pid_file | sed 's/.pid$//' | tr '-' ' ' | sed 's/\b\(.\)/\u\1/g')
+            echo -e "${GREEN}✓ $name process running (PID: $pid)${NC}"
+        else
+            name=$(echo $pid_file | sed 's/.pid$//' | tr '-' ' ' | sed 's/\b\(.\)/\u\1/g')
+            echo -e "${YELLOW}⚠ $name process not found${NC}"
+        fi
+    else
+        name=$(echo $pid_file | sed 's/.pid$//' | tr '-' ' ' | sed 's/\b\(.\)/\u\1/g')
+        echo -e "${YELLOW}⚠ $name PID file not found${NC}"
+    fi
+done
 
 # Verify metrics collection from Kubernetes pods
 echo -e "${BLUE}Verifying pod metrics collection...${NC}"

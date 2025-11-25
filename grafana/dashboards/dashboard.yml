@@ -7,8 +7,10 @@ providers:
     type: file
     disableDeletion: false
     editable: true
-    updateIntervalSeconds: 10
+    updateIntervalSeconds: 30
     allowUiUpdates: true
     options:
-      path: /etc/grafana/provisioning/dashboards
+      # Path to directory containing dashboard JSON files
+      # This should point to where the JSON files are mounted, not the provisioning config directory
+      path: /var/lib/grafana/dashboards
       foldersFromFilesStructure: false

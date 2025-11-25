@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/namansh70747/aura-k8s/pkg/config"
 	"github.com/namansh70747/aura-k8s/pkg/k8s"
 	"github.com/namansh70747/aura-k8s/pkg/metrics"
 	"github.com/namansh70747/aura-k8s/pkg/ml"
@@ -49,18 +51,25 @@ func main() {
 
 	// Get configuration from environment - fail-fast in production if not set
 	env := getEnv("ENVIRONMENT", "development")
-	dbURL := getEnv("DATABASE_URL", "")
+	dbURL := config.GetDatabaseURL()
 	if dbURL == "" {
 		if env == "production" {
 			utils.Log.Fatal("DATABASE_URL environment variable is required in production")
 		}
-		// Use default only in development - standardize connection string format
-		// Use 127.0.0.1 instead of localhost to avoid IPv6 resolution issues
-		dbURL = "postgresql://aura:aura_password@127.0.0.1:5432/aura_metrics?sslmode=disable"
 		utils.Log.Warn("Using default DATABASE_URL (development only)")
 	}
-	mlURL := getEnv("ML_SERVICE_URL", "http://localhost:8001")
-	interval := getEnvDuration("COLLECTION_INTERVAL", 15*time.Second)
+	mlURL := config.GetServiceURL("ML_SERVICE", "8001")
+	if mlURL == "" {
+		utils.Log.Fatal("ML_SERVICE_URL cannot be empty")
+	}
+
+	// Validate collection interval (must be >= 100ms for performance)
+	interval := getEnvDuration("COLLECTION_INTERVAL", 500*time.Millisecond)
+	if interval < 100*time.Millisecond {
+		utils.Log.Warnf("Collection interval too low (%v), setting to minimum 100ms", interval)
+		interval = 100 * time.Millisecond
+	}
+
 	metricsPort := getEnv("METRICS_PORT", "9090")
 
 	// Initialize Kubernetes client
@@ -110,8 +119,51 @@ func main() {
 	mlClient := ml.NewMLClient(mlURL)
 	utils.Log.Infof("ML client initialized with URL: %s", mlURL)
 
-	// Create collector with ML integration (pass PostgresDB directly, it implements Database interface via methods)
-	collector := metrics.NewCollector(k8sClient, postgresDB, mlClient)
+	// Determine collection mode (parallel or standard)
+	useParallel := getEnv("USE_PARALLEL_COLLECTION", "true") == "true"
+	
+	var collector interface {
+		CollectAll(ctx context.Context) error
+		CollectMetricsParallel(ctx context.Context) error
+	}
+	
+	// Store collector instance for API access
+	var standardCollector *metrics.Collector
+	var parallelCollector *metrics.ParallelCollector
+	
+	if useParallel {
+		// Get parallel collection configuration
+		workers := 20
+		if val := os.Getenv("METRICS_COLLECTOR_WORKERS"); val != "" {
+			if w, err := strconv.Atoi(val); err == nil && w > 0 {
+				workers = w
+			}
+		}
+		
+		batchSize := 100
+		if val := os.Getenv("METRICS_COLLECTOR_BATCH_SIZE"); val != "" {
+			if bs, err := strconv.Atoi(val); err == nil && bs > 0 {
+				batchSize = bs
+			}
+		}
+		
+		cacheTTL := 10 * time.Second
+		if val := os.Getenv("METRICS_CACHE_TTL_SECONDS"); val != "" {
+			if ttl, err := strconv.Atoi(val); err == nil && ttl > 0 {
+				cacheTTL = time.Duration(ttl) * time.Second
+			}
+		}
+		
+		// Create parallel collector
+		parallelCollector = metrics.NewParallelCollector(k8sClient, postgresDB, mlClient, workers, batchSize, cacheTTL)
+		collector = parallelCollector
+		utils.Log.Infof("Using parallel collection mode with %d workers, batch size %d, cache TTL %v", workers, batchSize, cacheTTL)
+	} else {
+		// Create standard collector
+		standardCollector = metrics.NewCollector(k8sClient, postgresDB, mlClient)
+		collector = &standardCollectorWrapper{collector: standardCollector}
+		utils.Log.Info("Using standard collection mode")
+	}
 
 	// Start health and metrics server
 	go func() {
@@ -140,9 +192,9 @@ func main() {
 			}
 
 			// Non-critical: ML service (degraded if unavailable)
-			mlURL := getEnv("ML_SERVICE_URL", "http://localhost:8001")
-			mlClient := &http.Client{Timeout: 2 * time.Second}
-			resp, err := mlClient.Get(mlURL + "/health")
+			// Reuse mlClient from main function scope via closure
+			healthClient := &http.Client{Timeout: 2 * time.Second}
+			resp, err := healthClient.Get(mlURL + "/health")
 			if err != nil || (resp != nil && resp.StatusCode != http.StatusOK) {
 				degraded = true
 				issues = append(issues, "ml_service")
@@ -152,7 +204,7 @@ func main() {
 			}
 
 			// Non-critical: MCP server (degraded if unavailable)
-			mcpURL := getEnv("MCP_SERVER_URL", "http://localhost:8000")
+			mcpURL := config.GetServiceURL("MCP_SERVER", "8000")
 			mcpClient := &http.Client{Timeout: 2 * time.Second}
 			mcpResp, mcpErr := mcpClient.Get(mcpURL + "/health")
 			if mcpErr != nil || (mcpResp != nil && mcpResp.StatusCode != http.StatusOK) {
@@ -186,6 +238,86 @@ func main() {
 		// Prometheus metrics endpoint
 		mux.Handle("/metrics", promhttp.Handler())
 
+		// API endpoint to expose circular buffer for predictive orchestrator
+		// Works with both standard and parallel collectors
+		mux.HandleFunc("/api/v1/buffer/metrics", func(w http.ResponseWriter, r *http.Request) {
+			// Get limit from query parameter (default: 1000)
+			limit := 1000
+			if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+				if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 10000 {
+					limit = l
+				}
+			}
+			
+			// Get buffer metrics from either collector
+			var bufferMetrics []*metrics.PodMetrics
+			var stats map[string]interface{}
+			
+			if parallelCollector != nil {
+				// Parallel collector embeds *Collector, so it has access to buffer methods
+				bufferMetrics = parallelCollector.GetBufferMetrics(limit)
+				stats = parallelCollector.GetBufferStats()
+			} else if standardCollector != nil {
+				bufferMetrics = standardCollector.GetBufferMetrics(limit)
+				stats = standardCollector.GetBufferStats()
+			} else {
+				http.Error(w, "No collector available", http.StatusServiceUnavailable)
+				return
+			}
+			
+			// Convert to JSON
+			type MetricResponse struct {
+				PodName           string    `json:"pod_name"`
+				Namespace         string    `json:"namespace"`
+				Timestamp         time.Time `json:"timestamp"`
+				CPUUtilization    float64   `json:"cpu_utilization"`
+				MemoryUtilization float64   `json:"memory_utilization"`
+				NetworkRxBytes    int64     `json:"network_rx_bytes"`
+				NetworkTxBytes    int64     `json:"network_tx_bytes"`
+				Restarts          int       `json:"restarts"`
+			}
+			
+			response := make([]MetricResponse, 0, len(bufferMetrics))
+			for _, m := range bufferMetrics {
+				if m != nil {
+					response = append(response, MetricResponse{
+						PodName:           m.PodName,
+						Namespace:         m.Namespace,
+						Timestamp:         m.Timestamp,
+						CPUUtilization:    m.CPUUtilization,
+						MemoryUtilization: m.MemoryUtilization,
+						NetworkRxBytes:    m.NetworkRxBytes,
+						NetworkTxBytes:    m.NetworkTxBytes,
+						Restarts:          int(m.Restarts),
+					})
+				}
+			}
+			
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"metrics": response,
+				"count":   len(response),
+				"stats":   stats,
+			})
+		})
+		
+		// Buffer stats endpoint - works with both collectors
+		mux.HandleFunc("/api/v1/buffer/stats", func(w http.ResponseWriter, r *http.Request) {
+			var stats map[string]interface{}
+			
+			if parallelCollector != nil {
+				stats = parallelCollector.GetBufferStats()
+			} else if standardCollector != nil {
+				stats = standardCollector.GetBufferStats()
+			} else {
+				http.Error(w, "No collector available", http.StatusServiceUnavailable)
+				return
+			}
+			
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(stats)
+		})
+
 		utils.Log.Infof("Starting health and metrics server on :%s", metricsPort)
 		if err := http.ListenAndServe(":"+metricsPort, mux); err != nil {
 			utils.Log.WithError(err).Error("Health server failed")
@@ -203,8 +335,14 @@ func main() {
 	utils.Log.Infof("Collection started with interval: %s", interval)
 
 	// Collect immediately on startup
-	if err := collector.CollectAll(ctx); err != nil {
-		utils.Log.WithError(err).Error("Initial collection failed")
+	if useParallel {
+		if err := collector.CollectMetricsParallel(ctx); err != nil {
+			utils.Log.WithError(err).Error("Initial parallel collection failed")
+		}
+	} else {
+		if err := collector.CollectAll(ctx); err != nil {
+			utils.Log.WithError(err).Error("Initial collection failed")
+		}
 	}
 
 	// Main loop
@@ -213,7 +351,14 @@ func main() {
 		case <-ticker.C:
 			start := time.Now()
 
-			if err := collector.CollectAll(ctx); err != nil {
+			var err error
+			if useParallel {
+				err = collector.CollectMetricsParallel(ctx)
+			} else {
+				err = collector.CollectAll(ctx)
+			}
+
+			if err != nil {
 				utils.Log.WithError(err).Error("Collection failed")
 				metrics.CollectionErrors.WithLabelValues("all").Inc()
 				metrics.SetServiceHealth("collector", false)
@@ -267,4 +412,26 @@ func getEnvDuration(key string, defaultValue time.Duration) time.Duration {
 		}
 	}
 	return defaultValue
+}
+
+// standardCollectorWrapper wraps the standard collector to implement the interface
+type standardCollectorWrapper struct {
+	collector *metrics.Collector
+}
+
+func (w *standardCollectorWrapper) CollectAll(ctx context.Context) error {
+	return w.collector.CollectAll(ctx)
+}
+
+func (w *standardCollectorWrapper) CollectMetricsParallel(ctx context.Context) error {
+	// Fallback to standard collection
+	return w.collector.CollectAll(ctx)
+}
+
+func (w *standardCollectorWrapper) GetBufferMetrics(limit int) []*metrics.PodMetrics {
+	return w.collector.GetBufferMetrics(limit)
+}
+
+func (w *standardCollectorWrapper) GetBufferStats() map[string]interface{} {
+	return w.collector.GetBufferStats()
 }

@@ -3,6 +3,7 @@ package remediation
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/namansh70747/aura-k8s/pkg/k8s"
@@ -105,9 +106,17 @@ func (pr *PreventiveRemediator) scaleUpPod(ctx context.Context, warning *metrics
 		return nil
 	}
 
-	// Get the pod to find its owner
+	// Get the pod to find its owner - validate pod exists first
 	pod, err := pr.k8sClient.GetPod(ctx, warning.Namespace, warning.PodName)
 	if err != nil {
+		// If pod doesn't exist, this is expected - log and skip
+		if strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "NotFound") {
+			utils.Log.WithFields(map[string]interface{}{
+				"pod":       warning.PodName,
+				"namespace": warning.Namespace,
+			}).Debug("Pod no longer exists, skipping preventive remediation")
+			return nil // Don't treat as error - pod was deleted
+		}
 		return fmt.Errorf("failed to get pod: %w", err)
 	}
 
@@ -158,9 +167,17 @@ func (pr *PreventiveRemediator) increaseResources(ctx context.Context, warning *
 		return nil
 	}
 
-	// Get the pod to find its owner
+	// Get the pod to find its owner - validate pod exists first
 	pod, err := pr.k8sClient.GetPod(ctx, warning.Namespace, warning.PodName)
 	if err != nil {
+		// If pod doesn't exist, this is expected - log and skip
+		if strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "NotFound") {
+			utils.Log.WithFields(map[string]interface{}{
+				"pod":       warning.PodName,
+				"namespace": warning.Namespace,
+			}).Debug("Pod no longer exists, skipping preventive remediation")
+			return nil // Don't treat as error - pod was deleted
+		}
 		return fmt.Errorf("failed to get pod: %w", err)
 	}
 

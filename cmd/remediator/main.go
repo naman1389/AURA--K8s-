@@ -2,13 +2,21 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime"
+	"runtime/debug"
 	"strconv"
 	"syscall"
 	"time"
 
+	_ "net/http/pprof" // Enable pprof for profiling
+
+	"github.com/namansh70747/aura-k8s/pkg/config"
 	"github.com/namansh70747/aura-k8s/pkg/k8s"
 	"github.com/namansh70747/aura-k8s/pkg/metrics"
 	"github.com/namansh70747/aura-k8s/pkg/remediation"
@@ -19,6 +27,32 @@ import (
 
 func main() {
 	utils.Log.Info("Starting AURA K8s Remediator")
+
+	// Enable pprof for profiling (disabled by default, enable explicitly)
+	pprofEnabled := os.Getenv("ENABLE_PPROF") == "true"
+	if pprofEnabled {
+		pprofAddr := getEnv("PPROF_ADDR", "localhost:6060")
+		go func() {
+			utils.Log.Infof("Starting pprof server on %s", pprofAddr)
+			log.Println(http.ListenAndServe(pprofAddr, nil))
+		}()
+	}
+
+	// Set GOMAXPROCS to number of CPUs for optimal parallelism
+	numCPU := runtime.NumCPU()
+	runtime.GOMAXPROCS(numCPU)
+	utils.Log.Infof("Set GOMAXPROCS to %d", numCPU)
+
+	// Enable GC tuning for better performance
+	// More aggressive GC (lower value = more frequent GC, higher memory usage but lower latency)
+	gcPercent := 100 // Default: 100%
+	if val := os.Getenv("GOGC"); val != "" {
+		if percent, err := strconv.Atoi(val); err == nil && percent > 0 {
+			gcPercent = percent
+		}
+	}
+	debug.SetGCPercent(gcPercent)
+	utils.Log.Infof("Set GC percent to %d", gcPercent)
 	
 	// Setup file logging with rotation if configured
 	if logDir := os.Getenv("LOG_DIR"); logDir != "" {
@@ -47,18 +81,34 @@ func main() {
 
 	// Get configuration from environment - fail-fast in production if not set
 	env := getEnv("ENVIRONMENT", "development")
-	dbURL := getEnv("DATABASE_URL", "")
+	dbURL := config.GetDatabaseURL()
 	if dbURL == "" {
 		if env == "production" {
 			utils.Log.Fatal("DATABASE_URL environment variable is required in production")
 		}
-		// Use default only in development - standardize connection string format
-		// Use 127.0.0.1 instead of localhost to avoid IPv6 resolution issues
-		dbURL = "postgresql://aura:aura_password@127.0.0.1:5432/aura_metrics?sslmode=disable"
 		utils.Log.Warn("Using default DATABASE_URL (development only)")
 	}
-	mcpURL := getEnv("MCP_SERVER_URL", "http://localhost:8000")
+	
+	// Validate MCP server URL
+	mcpURL := config.GetServiceURL("MCP_SERVER", "8000")
+	if mcpURL == "" {
+		utils.Log.Warn("MCP_SERVER_URL not set, AI-powered remediation will be disabled")
+	}
+	
+	// Validate remediation interval (must be >= 5s for performance)
 	interval := getEnvDuration("REMEDIATION_INTERVAL", 30*time.Second)
+	if interval < 5*time.Second {
+		utils.Log.Warnf("Remediation interval too low (%v), setting to minimum 5s", interval)
+		interval = 5 * time.Second
+	}
+	
+	// Preventive remediation runs faster (every 10s by default) for quick response
+	preventiveInterval := getEnvDuration("PREVENTIVE_REMEDIATION_INTERVAL", 10*time.Second)
+	if preventiveInterval < 2*time.Second {
+		utils.Log.Warnf("Preventive remediation interval too low (%v), setting to minimum 2s", preventiveInterval)
+		preventiveInterval = 2 * time.Second
+	}
+	
 	metricsPort := getEnv("METRICS_PORT", "9091")
 
 	// Initialize Kubernetes client
@@ -113,12 +163,13 @@ func main() {
 				healthy = false
 			}
 			
-			// Check MCP server (if configured)
+			// Check MCP server (if configured) - non-critical, only degrades if unavailable
 			if mcpURL != "" {
 				mcpClient := &http.Client{Timeout: 5 * time.Second}
 				resp, err := mcpClient.Get(mcpURL + "/health")
 				if err != nil || (resp != nil && resp.StatusCode != http.StatusOK) {
-					healthy = false
+					// MCP server is optional - don't mark as unhealthy, just log
+					utils.Log.WithError(err).Debug("MCP server health check failed (non-critical)")
 				}
 				if resp != nil {
 					resp.Body.Close()
@@ -139,6 +190,32 @@ func main() {
 		// Prometheus metrics endpoint
 		mux.Handle("/metrics", promhttp.Handler())
 		
+		// API endpoint for immediate preventive action triggering
+		mux.HandleFunc("/api/v1/trigger-preventive", func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodPost {
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			
+			// Trigger preventive remediation immediately
+			triggerCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			
+			if err := remediator.ProcessPreventiveRemediations(triggerCtx); err != nil {
+				utils.Log.WithError(err).Error("Failed to trigger preventive remediation via API")
+				http.Error(w, fmt.Sprintf("Failed to trigger preventive remediation: %v", err), http.StatusInternalServerError)
+				return
+			}
+			
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"status":  "success",
+				"message": "Preventive remediation triggered",
+				"time":    time.Now().Format(time.RFC3339),
+			})
+		})
+		
 		utils.Log.Infof("Starting health and metrics server on :%s", metricsPort)
 		if err := http.ListenAndServe(":"+metricsPort, mux); err != nil {
 			utils.Log.WithError(err).Error("Health server failed")
@@ -149,23 +226,33 @@ func main() {
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 
-	// Start remediation loop
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
+	// Start remediation loops
+	reactiveTicker := time.NewTicker(interval)
+	preventiveTicker := time.NewTicker(preventiveInterval)
+	cleanupTicker := time.NewTicker(1 * time.Hour) // Cleanup expired warnings every hour
+	defer reactiveTicker.Stop()
+	defer preventiveTicker.Stop()
+	defer cleanupTicker.Stop()
 
-	utils.Log.Infof("Remediation started with interval: %s", interval)
+	utils.Log.Infof("Remediation started - Reactive: %s, Preventive: %s", interval, preventiveInterval)
 
 	// Process immediately on startup
 	if err := remediator.ProcessRemediations(ctx); err != nil {
 		utils.Log.WithError(err).Error("Initial remediation failed")
 	}
 
-	// Main loop
+	// Process preventive remediations immediately on startup
+	if err := remediator.ProcessPreventiveRemediations(ctx); err != nil {
+		utils.Log.WithError(err).Error("Initial preventive remediation failed")
+	}
+
+	// Main loop - run reactive and preventive in parallel
 	for {
 		select {
-		case <-ticker.C:
+		case <-reactiveTicker.C:
 			start := time.Now()
 
+			// Process reactive remediations
 			if err := remediator.ProcessRemediations(ctx); err != nil {
 				utils.Log.WithError(err).Error("Remediation failed")
 				metrics.RemediationsTotal.WithLabelValues("failed").Inc()
@@ -176,6 +263,29 @@ func main() {
 				metrics.RemediationsTotal.WithLabelValues("success").Inc()
 				utils.Log.Infof("Remediation completed in %.2fs", duration.Seconds())
 				metrics.SetServiceHealth("remediator", true)
+			}
+			
+		case <-preventiveTicker.C:
+			// Process preventive remediations (faster interval for proactive actions)
+			preventiveStart := time.Now()
+			if err := remediator.ProcessPreventiveRemediations(ctx); err != nil {
+				utils.Log.WithError(err).Error("Preventive remediation failed")
+				metrics.RemediationsTotal.WithLabelValues("preventive_failed").Inc()
+			} else {
+				preventiveDuration := time.Since(preventiveStart)
+				utils.Log.Infof("Preventive remediation completed in %.2fs", preventiveDuration.Seconds())
+				metrics.RemediationsTotal.WithLabelValues("preventive_success").Inc()
+			}
+			
+		case <-cleanupTicker.C:
+			// Cleanup expired warnings
+			cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 30*time.Second)
+			cleaned, err := postgresDB.CleanupExpiredWarnings(cleanupCtx)
+			cleanupCancel()
+			if err != nil {
+				utils.Log.WithError(err).Error("Failed to cleanup expired warnings")
+			} else if cleaned > 0 {
+				utils.Log.Infof("Cleaned up %d expired warnings", cleaned)
 			}
 
 		case <-stop:

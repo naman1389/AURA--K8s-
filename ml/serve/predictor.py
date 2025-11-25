@@ -465,7 +465,7 @@ async def readiness_check():
     return {"ready": True}
 
 @v1_router.post("/predict", response_model=PredictionResponse)
-@limiter.limit("100/minute")  # Rate limit: 100 requests per minute per IP
+@limiter.limit("1000/minute")  # Rate limit: 1000 requests per minute per IP (increased for predictive orchestrator)
 async def predict_v1(
     request: Request,
     prediction_request: PredictionRequest,
@@ -601,7 +601,7 @@ async def predict_v1(
         raise HTTPException(status_code=500, detail=f"Prediction error: {str(e)}")
 
 @app.post("/predict", response_model=PredictionResponse)  # Legacy endpoint
-@limiter.limit("100/minute")
+@limiter.limit("1000/minute")  # Increased for predictive orchestrator
 async def predict(
     request: Request,
     prediction_request: PredictionRequest,
@@ -644,7 +644,7 @@ except ImportError:
         logger.warning(f"Forecasting service not available - forecasting endpoints will be disabled: {e}")
 
 @v1_router.post("/forecast")
-@limiter.limit("50/minute")
+@limiter.limit("1000/minute")  # Increased for predictive orchestrator
 async def forecast_v1(
     request: Request,
     forecast_request: dict,
