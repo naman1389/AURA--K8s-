@@ -2,7 +2,7 @@
 
 ![Status](https://img.shields.io/badge/status-production--ready-success)
 ![ML Accuracy](https://img.shields.io/badge/ML%20accuracy-96.7%25-blue)
-[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+![License](https://img.shields.io/badge/license-MIT-green.svg)
 
 **Production-grade Kubernetes monitoring platform with ML-powered anomaly detection and intelligent auto-remediation.**
 
@@ -14,7 +14,7 @@ AURA K8s is an enterprise-ready Kubernetes monitoring and auto-remediation platf
 
 ### Key Features
 
-- **🤖 Advanced ML Detection**: 96.7% accuracy using ensemble models (XGBoost, Random Forest, LightGBM, Gradient Boosting)
+- **🤖 Advanced ML Detection**: 96.7% accuracy using ensemble models (XGBoost, Random Forest, LightGBM, Gradient Boosting, CatBoost)
 - **🔮 Predictive Anomaly Detection**: Forecast anomalies before they occur with 5-15 minute prediction horizon
 - **⚠️ Early Warning System**: Risk scoring, severity classification, and time-to-anomaly estimation
 - **🛡️ Preventive Remediation**: Proactive actions to prevent issues (scale-up, resource increase, load balancing)
@@ -22,7 +22,7 @@ AURA K8s is an enterprise-ready Kubernetes monitoring and auto-remediation platf
 - **💾 Time-Series Optimization**: TimescaleDB for efficient metrics storage and querying
 - **🧠 AI-Powered Insights**: Ollama integration for intelligent remediation recommendations
 - **☸️ Native K8s Integration**: Works seamlessly with any Kubernetes cluster
-- **📊 Real-Time Monitoring**: Metrics collection every 15 seconds with parallel processing
+- **📊 Real-Time Monitoring**: Metrics collection every 15 seconds with parallel processing (20 workers)
 - **💰 Cost Optimization**: Automatic resource rightsizing recommendations
 - **⚡ High Performance**: Sub-second latency with multi-level caching
 
@@ -64,25 +64,51 @@ AURA K8s is an enterprise-ready Kubernetes monitoring and auto-remediation platf
 
 ### Prerequisites
 
-- **Docker & Docker Compose** v2.0+
-- **Go 1.21+**
-- **Python 3.11+**
-- **Kind** (for local K8s cluster)
-- **kubectl**
+Install the following tools:
+
+```bash
+# macOS
+brew install docker docker-compose go python@3.11 kind kubectl
+
+# Linux (Ubuntu/Debian)
+sudo apt-get update
+sudo apt-get install -y docker.io docker-compose golang-go python3.11 python3-pip kubectl
+curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
+chmod +x ./kind
+sudo mv ./kind /usr/local/bin/kind
+
+# Verify installations
+docker --version
+docker-compose --version
+go version
+python3 --version
+kind --version
+kubectl version --client
+```
+
+**System Requirements:**
 - **8GB RAM minimum** (16GB recommended)
+- **10GB free disk space**
+- **Docker Desktop** or **Docker Engine** running
 
 ### Installation
 
 ```bash
-# Clone repository
+# 1. Clone repository
 git clone https://github.com/namansh70747/AURA--K8s-.git
 cd AURA--K8s-
 
-# Start everything with one command
+# 2. Install dependencies (optional - start.sh will do this automatically)
+make install
+
+# 3. Build Go binaries (optional - start.sh will do this automatically)
+make build
+
+# 4. Start everything with one command
 ./start.sh
 ```
 
-That's it! The startup script will:
+**That's it!** The startup script will:
 - ✅ Validate prerequisites
 - ✅ Set up Kind cluster (if needed)
 - ✅ Install metrics-server for Kubernetes metrics
@@ -96,26 +122,379 @@ That's it! The startup script will:
 
 ---
 
-## 📋 CLI Commands
+## 📋 Complete Command Reference
 
-### Quick Start
+### Basic Operations
+
+#### Start System
 ```bash
-# Start everything
+# Method 1: Using startup script (recommended)
 ./start.sh
 
-# Stop everything
+# Method 2: Using Makefile
+make start
+
+# Method 3: Using Python CLI
+python3 aura-cli.py start
+```
+
+#### Stop System
+```bash
+# Method 1: Using stop script
 ./stop.sh
 
-# Check service health
+# Method 2: Using Makefile
+make stop
+
+# Method 3: Using Python CLI
+python3 aura-cli.py stop
+```
+
+#### Restart System
+```bash
+# Using Makefile
+make restart
+
+# Or manually
+./stop.sh && ./start.sh
+```
+
+#### Check Status
+```bash
+# Check all services
+make status
+
+# Or using Python CLI
+python3 aura-cli.py status
+
+# Check individual services
 curl http://localhost:9090/health  # Collector
 curl http://localhost:9091/health  # Remediator
-curl http://localhost:8001/health # ML Service
-curl http://localhost:8000/health # MCP Server
+curl http://localhost:8001/health  # ML Service
+curl http://localhost:8000/health  # MCP Server
+```
 
-# View logs
+### Build & Development
+
+#### Install Dependencies
+```bash
+# Install Python dependencies
+make install
+
+# Or manually
+python3 -m venv venv
+./venv/bin/pip install --upgrade pip
+./venv/bin/pip install -r ml/train/requirements.txt
+./venv/bin/pip install -r mcp/requirements.txt
+./venv/bin/pip install -r ml/serve/requirements.txt
+```
+
+#### Build Go Binaries
+```bash
+# Build all binaries
+make build
+
+# Or manually
+go build -o bin/collector ./cmd/collector
+go build -o bin/remediator ./cmd/remediator
+```
+
+#### Train ML Models
+```bash
+# Train models (models are auto-loaded if they exist)
+cd ml/train
+python3 beast_train.py
+
+# Force retraining (even if models exist)
+FORCE_RETRAIN=true python3 beast_train.py
+
+# Using Makefile
+make train
+```
+
+**Note:** Models are automatically preserved in git. Training is skipped if models already exist.
+
+### Docker Operations
+
+#### Start Docker Services
+```bash
+# Start TimescaleDB only (Grafana runs locally)
+make docker-up
+
+# Or manually
+docker-compose up -d timescaledb
+```
+
+#### Stop Docker Services
+```bash
+# Stop all Docker services
+make docker-down
+
+# Or manually
+docker-compose down
+```
+
+#### View Docker Logs
+```bash
+# View all Docker logs
+make docker-logs
+
+# Or manually
+docker-compose logs -f timescaledb
+```
+
+#### Database Operations
+```bash
+# Open PostgreSQL shell
+make db-shell
+
+# Or manually
+docker exec -it aura-timescaledb psql -U aura -d aura_metrics
+
+# Reset database (WARNING: Deletes all data)
+make db-reset
+
+# Check database tables
+docker exec aura-timescaledb psql -U aura -d aura_metrics -c "\dt"
+
+# Query metrics
+docker exec aura-timescaledb psql -U aura -d aura_metrics -c "
+  SELECT COUNT(*) FROM pod_metrics WHERE timestamp > NOW() - INTERVAL '1 hour';
+"
+```
+
+### Logs & Monitoring
+
+#### View Logs
+```bash
+# View all recent logs
+make logs
+
+# Or using Python CLI
+python3 aura-cli.py logs
+
+# View specific service logs
 tail -f logs/collector.log
 tail -f logs/remediator.log
+tail -f logs/ml-service.log
+tail -f logs/mcp-server.log
+tail -f logs/orchestrator.log
 tail -f logs/predictive-orchestrator.log
+
+# View all logs in real-time
+tail -f logs/*.log
+```
+
+#### Monitor Services
+```bash
+# Check service health endpoints
+curl http://localhost:9090/health  # Collector
+curl http://localhost:9091/health  # Remediator
+curl http://localhost:8001/health  # ML Service
+curl http://localhost:8000/health  # MCP Server
+
+# Check service metrics
+curl http://localhost:9090/metrics  # Collector metrics
+curl http://localhost:9091/metrics  # Remediator metrics
+
+# Check Kubernetes pods
+kubectl get pods -A
+kubectl top pods
+kubectl top nodes
+```
+
+### Testing & Validation
+
+#### Validate System
+```bash
+# Run system validation
+make validate
+
+# Or using Python CLI
+python3 aura-cli.py validate
+
+# Or manually
+python3 scripts/validate_system.py
+```
+
+#### Run Tests
+```bash
+# Run end-to-end tests
+make test
+
+# Or using Python CLI
+python3 aura-cli.py test
+```
+
+#### Deploy Test Pods
+```bash
+# Deploy pods that will trigger remediation
+kubectl apply -f test-remediation-pod.yaml
+
+# Deploy stress test pods
+kubectl apply -f stress-pods.yaml
+
+# Monitor predictions and warnings
+tail -f logs/predictive-orchestrator.log
+
+# Check early warnings in database
+docker exec aura-timescaledb psql -U aura -d aura_metrics -c "
+  SELECT pod_name, anomaly_type, confidence, time_to_anomaly_seconds, created_at
+  FROM early_warnings
+  ORDER BY created_at DESC
+  LIMIT 10;
+"
+```
+
+### Cleanup & Maintenance
+
+#### Clean Build Artifacts
+```bash
+# Clean build artifacts and caches
+make clean
+
+# This removes:
+# - bin/ directory
+# - __pycache__ directories
+# - *.pyc files
+# - .pids/ directory
+```
+
+#### Deep Clean
+```bash
+# Deep clean (including venv and models)
+make deep-clean
+
+# WARNING: This removes:
+# - venv/ directory
+# - ml/train/models/*.joblib files
+# - Docker volumes
+```
+
+#### Cleanup Ports & Processes
+```bash
+# Clean up ports and processes
+make cleanup
+
+# Or using Python CLI
+python3 aura-cli.py cleanup
+```
+
+### Code Quality
+
+#### Format Code
+```bash
+# Format Go code
+go fmt ./...
+
+# Format Python code (if black is installed)
+make fmt
+```
+
+#### Run Checks
+```bash
+# Run all checks (lint, test, validate)
+make check
+
+# Go-specific checks
+go vet ./...
+go fmt ./...
+```
+
+#### Update Dependencies
+```bash
+# Update all dependencies
+make update-deps
+
+# Update Go dependencies manually
+go get -u ./...
+go mod tidy
+
+# Update Python dependencies manually
+./venv/bin/pip install --upgrade -r ml/train/requirements.txt
+./venv/bin/pip install --upgrade -r mcp/requirements.txt
+./venv/bin/pip install --upgrade -r ml/serve/requirements.txt
+```
+
+### Kubernetes Operations
+
+#### Cluster Management
+```bash
+# Create Kind cluster
+kind create cluster --name aura-k8s-local --config configs/kind-cluster-simple.yaml
+
+# Delete Kind cluster
+kind delete cluster --name aura-k8s-local
+
+# List clusters
+kind get clusters
+
+# Get cluster info
+kubectl cluster-info
+
+# Switch context
+kubectl config use-context kind-aura-k8s-local
+```
+
+#### Metrics Server
+```bash
+# Check metrics-server status
+kubectl get deployment metrics-server -n kube-system
+
+# View metrics-server logs
+kubectl logs -n kube-system -l k8s-app=metrics-server
+
+# Test metrics API
+kubectl top pods
+kubectl top nodes
+```
+
+#### Pod Management
+```bash
+# List all pods
+kubectl get pods -A
+
+# Get pod details
+kubectl describe pod <pod-name> -n <namespace>
+
+# View pod logs
+kubectl logs <pod-name> -n <namespace>
+
+# Execute command in pod
+kubectl exec -it <pod-name> -n <namespace> -- /bin/sh
+```
+
+### Grafana Operations
+
+#### Access Grafana
+```bash
+# Open Grafana in browser
+open http://localhost:3000  # macOS
+xdg-open http://localhost:3000  # Linux
+
+# Default credentials:
+# Username: admin
+# Password: admin
+```
+
+#### Import Dashboards
+```bash
+# Dashboards are auto-imported on startup
+# Manual import (if needed)
+python3 scripts/import_grafana_dashboards.py
+```
+
+#### Restart Grafana
+```bash
+# macOS
+brew services restart grafana
+
+# Linux
+sudo systemctl restart grafana-server
+
+# Or manually
+pkill -9 grafana-server
+grafana-server web
 ```
 
 ---
@@ -129,10 +508,13 @@ After startup, services are available at:
 | **Grafana** | **http://localhost:3000** | **Dashboards (admin/admin)** |
 | ML Service | http://localhost:8001/health | Health check |
 | ML Service API | http://localhost:8001/docs | FastAPI documentation |
+| ML Service Forecast | http://localhost:8001/forecast | Forecasting endpoint |
 | MCP Server | http://localhost:8000/health | Health check |
 | MCP Server API | http://localhost:8000/docs | FastAPI documentation |
 | Collector | http://localhost:9090/health | Metrics collector |
+| Collector Metrics | http://localhost:9090/metrics | Prometheus metrics |
 | Remediator | http://localhost:9091/health | Remediation engine |
+| Remediator Metrics | http://localhost:9091/metrics | Prometheus metrics |
 | TimescaleDB | localhost:5432 | PostgreSQL (aura/aura_password) |
 | Ollama | http://localhost:11434 | Local AI (optional) |
 
@@ -142,12 +524,25 @@ After startup, services are available at:
 
 ### Model Training
 
-Models are automatically trained on first startup using `ml/train/beast_train.py`. The system uses:
+Models are automatically preserved in git and loaded on startup. Training is skipped if models exist.
 
-- **Random Forest** (accuracy: ~95%)
-- **XGBoost** (accuracy: ~97%)
-- **LightGBM** (accuracy: ~96%)
-- **Gradient Boosting** (accuracy: ~96%)
+```bash
+# Train models (only if missing)
+cd ml/train
+python3 beast_train.py
+
+# Force retraining
+FORCE_RETRAIN=true python3 beast_train.py
+```
+
+**Models Included:**
+- **XGBoost** (1.2MB) - Accuracy: ~97%
+- **Random Forest** (3.3MB) - Accuracy: ~95%
+- **LightGBM** (3.8MB) - Accuracy: ~96%
+- **Gradient Boosting** (5.7MB) - Accuracy: ~96%
+- **CatBoost** (49MB) - Accuracy: ~97%
+- **Isolation Forest** (2.7MB) - Anomaly detection
+- **Ensemble** - Auto-reconstructed from individual models
 
 ### Prediction Pipeline
 
@@ -163,6 +558,14 @@ Models are automatically trained on first startup using `ml/train/beast_train.py
 The system engineers 13+ features from raw metrics including:
 - Base metrics: CPU, memory, disk, network, errors, latency, restarts
 - Engineered features: resource ratios, pressure indicators, trend analysis
+
+### Forecasting
+
+The predictive orchestrator generates forecasts every 5 seconds:
+- **Trend Analysis**: Linear regression on recent metrics
+- **Anomaly Probability**: ML-based probability estimation
+- **Time-to-Anomaly**: Estimated time until threshold breach
+- **Risk Scoring**: Severity classification (low/medium/high/critical)
 
 ---
 
@@ -196,6 +599,14 @@ For complex issues, AURA consults Ollama (Llama 3.2) which:
 - Explains root causes
 - **100% FREE** - runs locally, no API costs!
 
+### Preventive Actions
+
+Preventive remediation runs every 10 seconds and can:
+- Scale up deployments before resource exhaustion
+- Increase resource limits proactively
+- Rebalance load across pods
+- Trigger alerts for manual intervention
+
 ---
 
 ## 📁 Project Structure
@@ -204,42 +615,61 @@ For complex issues, AURA consults Ollama (Llama 3.2) which:
 AURA--K8s-/
 ├── start.sh                    # Main startup script
 ├── stop.sh                     # Shutdown script
+├── aura-cli.py                 # Python CLI tool
+├── Makefile                    # Build automation
+├── docker-compose.yml          # TimescaleDB & Grafana setup
+├── .gitignore                  # Git ignore patterns
+├── .gitattributes             # Git LFS configuration
+│
 ├── cmd/                        # Go applications
 │   ├── collector/              # Metrics collection service
+│   │   └── main.go
 │   └── remediator/             # Remediation service
+│       └── main.go
+│
 ├── pkg/                        # Go packages
 │   ├── k8s/                    # Kubernetes client
 │   ├── metrics/                # Metrics collection
 │   ├── ml/                     # ML client
-│   ├── remediation/            # Remediation engine
+│   ├── remediation/             # Remediation engine
 │   ├── storage/                # Database interface
 │   └── utils/                  # Common utilities
+│
 ├── ml/                         # Machine learning
 │   ├── train/                  # Model training
 │   │   ├── beast_train.py      # Training script
-│   │   └── models/             # Trained model artifacts
+│   │   ├── dataset_downloader.py  # Auto-download datasets
+│   │   ├── feature_engineering.py
+│   │   ├── models/             # Trained model artifacts
+│   │   └── datasets/           # Dataset directory (auto-downloaded)
 │   └── serve/                  # Prediction service
 │       ├── predictor.py        # FastAPI ensemble service
 │       └── forecaster.py       # Forecasting service
+│
 ├── mcp/                        # MCP server (AI recommendations)
 │   ├── server_ollama.py        # FastAPI + Ollama integration
 │   ├── tools.py                # K8s utilities
 │   ├── cost_calculator.py      # Cost optimization
-│   ├── remediation_planner.py  # Remediation planning
+│   ├── remediation_planner.py   # Remediation planning
 │   ├── remediation_learner.py  # Learning from past actions
 │   └── safety_checker.py       # Safety validation
+│
 ├── scripts/                    # Utilities
 │   ├── orchestrator.py         # ML pipeline coordinator
 │   ├── predictive_orchestrator.py  # Predictive detection
 │   ├── validate_system.py      # System validator
-│   └── init-db-timescale.sql   # Database schema
+│   ├── init-db-timescale.sql   # Database schema
+│   └── import_grafana_dashboards.py  # Dashboard importer
+│
 ├── configs/                    # Configuration
 │   └── kind-cluster-simple.yaml
+│
 ├── grafana/                    # Grafana dashboards
 │   ├── dashboards/             # 8 pre-configured dashboards
 │   └── datasources/            # Data source configuration
-├── docker-compose.yml          # TimescaleDB & Grafana setup
+│
 ├── go.mod                      # Go dependencies
+├── go.sum                      # Go dependency checksums
 └── README.md                   # This file
 ```
 
@@ -249,7 +679,7 @@ AURA--K8s-/
 
 ### Backend
 - **Go 1.21+** - High-performance services (collector, remediator)
-- **Python 3.11** - ML pipeline and orchestration
+- **Python 3.11+** - ML pipeline and orchestration
 
 ### Data & Storage
 - **PostgreSQL 15** - Relational database
@@ -259,7 +689,9 @@ AURA--K8s-/
 - **scikit-learn** - Base ML framework
 - **XGBoost** - Gradient boosting
 - **LightGBM** - Fast gradient boosting
+- **CatBoost** - Categorical boosting
 - **NumPy/Pandas** - Data processing
+- **joblib** - Model serialization
 
 ### AI & LLM
 - **Ollama** - Local LLM runtime
@@ -272,6 +704,10 @@ AURA--K8s-/
 ### API & Web
 - **FastAPI** - Modern Python API framework
 - **Uvicorn** - ASGI server
+
+### Monitoring
+- **Grafana** - Visualization and dashboards
+- **Prometheus** - Metrics format
 
 ---
 
@@ -343,39 +779,11 @@ AURA K8s includes 8 pre-configured Grafana dashboards:
 ./start.sh
 
 # Access Grafana
-open http://localhost:3000
+open http://localhost:3000  # macOS
+xdg-open http://localhost:3000  # Linux
+
 # Login: admin / admin
-
 # Navigate to Dashboards → AURA K8s folder
-```
-
----
-
-## 🧪 Testing
-
-### Deploy Test Pods
-
-```bash
-# Deploy pods that will trigger remediation
-kubectl apply -f test-remediation-pod.yaml
-
-# Monitor predictions and warnings
-tail -f logs/predictive-orchestrator.log
-```
-
-### Verify System
-
-```bash
-# Check all services
-curl http://localhost:9090/health  # Collector
-curl http://localhost:9091/health  # Remediator
-curl http://localhost:8001/health # ML Service
-curl http://localhost:8000/health # MCP Server
-
-# Check database
-docker exec aura-timescaledb psql -U aura -d aura_metrics -c "
-  SELECT COUNT(*) FROM pod_metrics WHERE timestamp > NOW() - INTERVAL '1 hour';
-"
 ```
 
 ---
@@ -391,6 +799,13 @@ docker exec aura-timescaledb psql -U aura -d aura_metrics -c "
 # Check logs
 tail -f logs/collector.log
 tail -f logs/remediator.log
+tail -f logs/ml-service.log
+
+# Check if ports are in use
+lsof -i :9090  # Collector
+lsof -i :9091  # Remediator
+lsof -i :8001  # ML Service
+lsof -i :8000  # MCP Server
 ```
 
 ### Database Connection Errors
@@ -401,6 +816,9 @@ docker-compose restart timescaledb
 
 # Check database
 docker exec aura-timescaledb psql -U aura -d aura_metrics -c "\dt"
+
+# Check database logs
+docker-compose logs timescaledb
 ```
 
 ### No Metrics Being Collected
@@ -408,12 +826,18 @@ docker exec aura-timescaledb psql -U aura -d aura_metrics -c "\dt"
 ```bash
 # Check Kind cluster
 kubectl get pods -A
+kubectl cluster-info
 
 # Check metrics-server
 kubectl get deployment metrics-server -n kube-system
+kubectl logs -n kube-system -l k8s-app=metrics-server
+
+# Test metrics API
+kubectl top pods
 
 # Check collector
 curl http://localhost:9090/health
+tail -f logs/collector.log
 ```
 
 ### ML Service Not Responding
@@ -424,6 +848,40 @@ ls -la ml/train/models/
 
 # Check service
 curl http://localhost:8001/health
+tail -f logs/ml-service.log
+
+# Test prediction endpoint
+curl -X POST http://localhost:8001/predict \
+  -H "Content-Type: application/json" \
+  -d '{"pod_name": "test-pod", "cpu_usage": 0.5, "memory_usage": 0.6}'
+```
+
+### Models Not Loading
+
+```bash
+# Check model files
+ls -lh ml/train/models/*.joblib
+
+# Models are preserved in git - no retraining needed
+# If models are missing, train them:
+cd ml/train
+python3 beast_train.py
+```
+
+### Port Conflicts
+
+```bash
+# Find process using port
+lsof -i :9090
+lsof -i :9091
+lsof -i :8001
+lsof -i :8000
+
+# Kill process
+kill -9 <PID>
+
+# Or use cleanup command
+make cleanup
 ```
 
 ---
@@ -455,7 +913,7 @@ MIT License - see LICENSE file for details
 - Kubernetes community for excellent client libraries
 - TimescaleDB for optimized time-series storage
 - Ollama for free local LLM capabilities
-- scikit-learn, XGBoost, LightGBM teams for ML libraries
+- scikit-learn, XGBoost, LightGBM, CatBoost teams for ML libraries
 
 ---
 

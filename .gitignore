@@ -1,5 +1,32 @@
+# ============================================================================
+# AURA K8s - Production-Level .gitignore
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# Environment Variables & Secrets (CRITICAL - Never commit!)
+# ----------------------------------------------------------------------------
+.env
+.env.*
 .env.local
+.env.local.*
+*.env
+*.env.*
+.env*.bak
+.env*.backup
+.env*.old
+config.env
+secrets.yaml
+secrets.yml
+*.key
+*.pem
+*.p12
+*.pfx
+*.crt
+*.cert
+
+# ----------------------------------------------------------------------------
 # Python
+# ----------------------------------------------------------------------------
 __pycache__/
 *.py[cod]
 *$py.class
@@ -12,8 +39,18 @@ build/
 venv/
 ENV/
 env/
+*.egg
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.mypy_cache/
+.dmypy.json
+dmypy.json
 
+# ----------------------------------------------------------------------------
 # Go
+# ----------------------------------------------------------------------------
 *.exe
 *.exe~
 *.dll
@@ -25,51 +62,177 @@ vendor/
 bin/
 collector
 remediator
+*.a
+*.o
 
-# IDE
+# ----------------------------------------------------------------------------
+# IDE & Editor Files
+# ----------------------------------------------------------------------------
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
-.DS_Store
+.project
+.classpath
+.settings/
+*.sublime-project
+*.sublime-workspace
+*.code-workspace
 
-# Logs
+# ----------------------------------------------------------------------------
+# Logs & Runtime Files (CRITICAL - Never commit logs!)
+# ----------------------------------------------------------------------------
 logs/
 *.log
-
-# Runtime
-.pids/
+*.log.*
+startup*.log
+training*.log
+build*.log
 *.pid
+.pids/
+*.lock
+*.lck
 
-# ML Models (keep structure, ignore binaries)
-ml/train/models/*.joblib
-ml/train/models/*.pkl
+# ----------------------------------------------------------------------------
+# ML Training Artifacts (Keep models, exclude training artifacts)
+# ----------------------------------------------------------------------------
+# CatBoost training artifacts
+ml/train/catboost_info/
+**/catboost_info/
+*.tsv
+*.tfevents
 
-# Database
+# Training logs
+ml/train/training*.log
+ml/train/current_training.log
+ml/train/training_output.log
+ml/train/training_peak_performer.log
+ml/train/training_real_datasets.log
+ml/train/training_kaggle.log
+ml/train/training_fixed.log
+
+# ML Models - Best Practice: Keep trained models for production
+# Keep smaller models in git (<100MB each), exclude very large ones
+ml/train/models/ensemble_model.joblib  # Too large (133MB), can be reconstructed
+
+# Keep smaller models and all metadata
+!ml/train/models/*.joblib
+!ml/train/models/*.json
+!ml/train/models/training_metadata.json
+!ml/train/models/anomaly_types.json
+!ml/train/models/feature_names.json
+
+# ----------------------------------------------------------------------------
+# Datasets - Best Practice: Keep structure, ignore large data files
+# ----------------------------------------------------------------------------
+ml/train/datasets/**/*.csv
+ml/train/datasets/**/*.json
+ml/train/datasets/**/*.zip
+ml/train/datasets/**/*.tar.gz
+ml/train/datasets/**/*.parquet
+ml/train/datasets/**/data/
+ml/train/datasets/**/NAB-master/data/
+ml/train/datasets/**/NAB-master/results/
+ml/train/datasets/**/NAB-master/scripts/*.ipynb
+ml/train/datasets/**/NAB-master/nab/detectors/*/data/
+
+# Jupyter notebooks (keep structure, ignore notebooks with outputs)
+*.ipynb
+*.ipynb_checkpoints
+!ml/train/datasets/**/.gitkeep
+
+# ----------------------------------------------------------------------------
+# Database Files
+# ----------------------------------------------------------------------------
 *.db
 *.sqlite3
+*.sqlite
+*.db-journal
+*.db-wal
+*.db-shm
 
-# Environment variables - comprehensive patterns
-.env
-.env.*
-.env.local
-.env.local.*
-*.env
-*.env.*
-.env*.bak
-.env*.backup
-config.env
-
-# OS
+# ----------------------------------------------------------------------------
+# OS Files
+# ----------------------------------------------------------------------------
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
+desktop.ini
 
-# Temporary files
+# ----------------------------------------------------------------------------
+# Temporary & Cache Files
+# ----------------------------------------------------------------------------
 tmp/
 temp/
 *.tmp
+*.cache
+*.bak
+*.backup
+*.old
+*.orig
+*.save
+*.swp
+*.swo
+*~
+.cache/
 
-# Docker volumes (if any)
+# ----------------------------------------------------------------------------
+# Docker & Container Files
+# ----------------------------------------------------------------------------
 docker-data/
-venv
+.docker/
+*.dockerignore.local
+
+# ----------------------------------------------------------------------------
+# Kubernetes Secrets & Configs (if any local overrides)
+# ----------------------------------------------------------------------------
+k8s/secrets/
+*.secret.yaml
+*.secret.yml
+kubeconfig.local
+
+# ----------------------------------------------------------------------------
+# Build Artifacts
+# ----------------------------------------------------------------------------
+*.class
+*.jar
+*.war
+*.ear
+target/
+out/
+build/
+dist/
+
+# ----------------------------------------------------------------------------
+# Node.js (if any frontend tools)
+# ----------------------------------------------------------------------------
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+
+# ----------------------------------------------------------------------------
+# Backup & Archive Files
+# ----------------------------------------------------------------------------
+*.tar
+*.tar.gz
+*.zip
+*.rar
+*.7z
+*.gz
+*.bz2
+*.xz
+
+# ----------------------------------------------------------------------------
+# Local Development Files
+# ----------------------------------------------------------------------------
+local/
+.local/
+*.local
