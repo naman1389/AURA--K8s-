@@ -181,12 +181,27 @@ func (pc *ParallelCollector) CollectMetricsParallel(ctx context.Context) error {
 
 	// Flush remaining metrics with a small delay to ensure batch processor is ready
 	time.Sleep(100 * time.Millisecond)
-	if len(metricsList) > 0 {
-		if err := pc.batchProcessor.AddMetrics(metricsList); err != nil {
-			utils.Log.WithError(err).Error("Failed to flush remaining metrics")
+	mu.Lock()
+	remainingMetrics := make([]*PodMetrics, len(metricsList))
+	copy(remainingMetrics, metricsList)
+	metricsList = metricsList[:0] // Clear to prevent double processing
+	mu.Unlock()
+	
+	if len(remainingMetrics) > 0 {
+		// Use background context to avoid cancellation
+		bgCtx := context.Background()
+		if err := pc.batchProcessor.AddMetrics(remainingMetrics); err != nil {
+			// If batch processor fails, save directly
+			utils.Log.WithError(err).Warn("Batch processor failed, saving metrics directly")
+			for _, m := range remainingMetrics {
+				if err := pc.db.SavePodMetrics(bgCtx, m); err != nil {
+					utils.Log.WithError(err).WithField("pod", m.PodName).Warn("Failed to save metric directly")
+				}
+			}
+		} else {
+			// Give batch processor time to process
+			time.Sleep(1 * time.Second)
 		}
-		// Give batch processor time to process
-		time.Sleep(500 * time.Millisecond)
 	}
 
 	// Log cache stats

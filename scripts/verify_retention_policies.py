@@ -100,7 +100,7 @@ def check_retention_policies(db_url: str):
 def main():
     parser = argparse.ArgumentParser(description='Verify TimescaleDB retention policies')
     parser.add_argument('--db-url', 
-                       default=os.getenv('DATABASE_URL', 'postgresql://aura:aura_password@localhost:5432/aura_metrics'),
+                       default=os.getenv('DATABASE_URL', 'postgresql://aura:aura_password@localhost:5432/aura_metrics') if 'config_helper' not in sys.modules else __import__('config_helper').get_database_url(),
                        help='Database connection URL')
     
     args = parser.parse_args()

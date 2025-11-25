@@ -33,7 +33,7 @@
       },
       "targets": [
         {
-          "rawSql": "SELECT COALESCE(COUNT(*), 0) as value FROM ml_predictions WHERE timestamp >= NOW() - INTERVAL '24 hours' AND is_anomaly = 1",
+          "rawSql": "SELECT COALESCE(COUNT(*), 0) as value FROM ml_predictions WHERE $__timeFilter(timestamp) AND is_anomaly = 1",
           "refId": "A",
           "format": "table"
         }
@@ -84,7 +84,7 @@
       },
       "targets": [
         {
-          "rawSql": "SELECT COALESCE(COUNT(*), 0) as value FROM ml_predictions WHERE timestamp >= NOW() - INTERVAL '24 hours' AND is_anomaly = 1 AND confidence > 0.9",
+          "rawSql": "SELECT COALESCE(COUNT(*), 0) as value FROM ml_predictions WHERE $__timeFilter(timestamp) AND is_anomaly = 1 AND confidence > 0.9",
           "refId": "A",
           "format": "table"
         }
@@ -135,7 +135,7 @@
       },
       "targets": [
         {
-          "rawSql": "SELECT CASE WHEN COUNT(*) > 0 AND MAX(timestamp) IS NOT NULL AND MIN(timestamp) IS NOT NULL THEN COUNT(*)::float / GREATEST(EXTRACT(EPOCH FROM (MAX(timestamp) - MIN(timestamp)))/3600, 1) ELSE 0.0 END as value FROM ml_predictions WHERE timestamp >= NOW() - INTERVAL '24 hours' AND is_anomaly = 1",
+          "rawSql": "SELECT CASE WHEN COUNT(*) > 0 AND MAX(timestamp) IS NOT NULL AND MIN(timestamp) IS NOT NULL THEN COUNT(*)::float / GREATEST(EXTRACT(EPOCH FROM (MAX(timestamp) - MIN(timestamp)))/3600, 1) ELSE 0.0 END as value FROM ml_predictions WHERE $__timeFilter(timestamp) AND is_anomaly = 1",
           "refId": "A",
           "format": "table"
         }
@@ -186,7 +186,7 @@
       },
       "targets": [
         {
-          "rawSql": "SELECT COALESCE(AVG(confidence), 0.0) * 100 as value FROM ml_predictions WHERE timestamp >= NOW() - INTERVAL '24 hours' AND is_anomaly = 1",
+          "rawSql": "SELECT COALESCE(AVG(confidence), 0.0) * 100 as value FROM ml_predictions WHERE $__timeFilter(timestamp) AND is_anomaly = 1",
           "refId": "A",
           "format": "table"
         }
@@ -237,7 +237,7 @@
       },
       "targets": [
         {
-          "rawSql": "SELECT COALESCE(COUNT(*), 0) as value FROM ml_predictions WHERE timestamp >= NOW() - INTERVAL '24 hours' AND is_anomaly = 1",
+          "rawSql": "SELECT COALESCE(COUNT(*), 0) as value FROM ml_predictions WHERE $__timeFilter(timestamp) AND is_anomaly = 1",
           "refId": "A",
           "format": "table"
         }
@@ -288,7 +288,7 @@
       },
       "targets": [
         {
-          "rawSql": "SELECT COALESCE(COUNT(*) FILTER (WHERE is_anomaly = 1 AND confidence < 0.3)::float / NULLIF(COUNT(*) FILTER (WHERE is_anomaly = 1), 0), 0.0) as value FROM ml_predictions WHERE timestamp >= NOW() - INTERVAL '24 hours'",
+          "rawSql": "SELECT COALESCE(COUNT(*) FILTER (WHERE is_anomaly = 1 AND confidence < 0.3)::float / NULLIF(COUNT(*) FILTER (WHERE is_anomaly = 1), 0), 0.0) as value FROM ml_predictions WHERE $__timeFilter(timestamp)",
           "refId": "A",
           "format": "table"
         }
@@ -339,7 +339,7 @@
       },
       "targets": [
         {
-          "rawSql": "SELECT time_bucket('1 minute', timestamp) as time, COALESCE(COUNT(*), 0) as value FROM ml_predictions WHERE timestamp >= NOW() - INTERVAL '24 hours' AND is_anomaly = 1 GROUP BY time ORDER BY time",
+          "rawSql": "SELECT time_bucket('1 minute', timestamp) as time, COALESCE(COUNT(*), 0) as value FROM ml_predictions WHERE $__timeFilter(timestamp) AND is_anomaly = 1 GROUP BY time ORDER BY time",
           "refId": "A",
           "format": "time_series",
           "timeColumn": "time"
@@ -380,7 +380,7 @@
       },
       "targets": [
         {
-          "rawSql": "SELECT timestamp as time, pod_name, confidence as value FROM ml_predictions WHERE timestamp >= NOW() - INTERVAL '24 hours' AND is_anomaly = 1 ORDER BY timestamp",
+          "rawSql": "SELECT timestamp as time, pod_name, confidence as value FROM ml_predictions WHERE $__timeFilter(timestamp) AND is_anomaly = 1 ORDER BY timestamp",
           "refId": "A",
           "format": "time_series",
           "timeColumn": "time"
@@ -421,7 +421,7 @@
       },
       "targets": [
         {
-          "rawSql": "SELECT time_bucket('1 minute', timestamp) as time, anomaly_type, COALESCE(COUNT(*), 0) as value FROM ml_predictions WHERE timestamp >= NOW() - INTERVAL '24 hours' AND is_anomaly = 1 GROUP BY time, anomaly_type ORDER BY time",
+          "rawSql": "SELECT time_bucket('1 minute', timestamp) as time, anomaly_type, COALESCE(COUNT(*), 0) as value FROM ml_predictions WHERE $__timeFilter(timestamp) AND is_anomaly = 1 GROUP BY time, anomaly_type ORDER BY time",
           "refId": "A",
           "format": "time_series",
           "timeColumn": "time"
@@ -462,7 +462,7 @@
       },
       "targets": [
         {
-          "rawSql": "SELECT time_bucket('1 minute', timestamp) as time, CASE WHEN confidence > 0.9 THEN 'critical' WHEN confidence > 0.7 THEN 'high' WHEN confidence > 0.5 THEN 'medium' ELSE 'low' END as severity, COALESCE(COUNT(*), 0) as value FROM ml_predictions WHERE timestamp >= NOW() - INTERVAL '24 hours' AND is_anomaly = 1 GROUP BY time, severity ORDER BY time",
+          "rawSql": "SELECT time_bucket('1 minute', timestamp) as time, CASE WHEN confidence > 0.9 THEN 'critical' WHEN confidence > 0.7 THEN 'high' WHEN confidence > 0.5 THEN 'medium' ELSE 'low' END as severity, COALESCE(COUNT(*), 0) as value FROM ml_predictions WHERE $__timeFilter(timestamp) AND is_anomaly = 1 GROUP BY time, severity ORDER BY time",
           "refId": "A",
           "format": "time_series",
           "timeColumn": "time"
@@ -503,7 +503,7 @@
       },
       "targets": [
         {
-          "rawSql": "SELECT time_bucket('1 minute', timestamp) as time, COALESCE(AVG(confidence), 0.0) as avg_confidence, COALESCE(MIN(confidence), 0.0) as min_confidence, COALESCE(MAX(confidence), 0.0) as max_confidence FROM ml_predictions WHERE timestamp >= NOW() - INTERVAL '24 hours' AND is_anomaly = 1 GROUP BY time ORDER BY time",
+          "rawSql": "SELECT time_bucket('1 minute', timestamp) as time, COALESCE(AVG(confidence), 0.0) as avg_confidence, COALESCE(MIN(confidence), 0.0) as min_confidence, COALESCE(MAX(confidence), 0.0) as max_confidence FROM ml_predictions WHERE $__timeFilter(timestamp) AND is_anomaly = 1 GROUP BY time ORDER BY time",
           "refId": "A",
           "format": "time_series",
           "timeColumn": "time"
@@ -544,7 +544,7 @@
       },
       "targets": [
         {
-          "rawSql": "SELECT time_bucket('1 minute', timestamp) as time, namespace, COALESCE(COUNT(*), 0) as value FROM ml_predictions WHERE timestamp >= NOW() - INTERVAL '24 hours' AND is_anomaly = 1 GROUP BY time, namespace ORDER BY time",
+          "rawSql": "SELECT time_bucket('1 minute', timestamp) as time, namespace, COALESCE(COUNT(*), 0) as value FROM ml_predictions WHERE $__timeFilter(timestamp) AND namespace NOT IN ('kube-system', 'kube-public', 'kube-node-lease', 'local-path-storage') AND is_anomaly = 1 GROUP BY time, namespace ORDER BY time",
           "refId": "A",
           "format": "time_series",
           "timeColumn": "time"
@@ -585,7 +585,7 @@
       },
       "targets": [
         {
-          "rawSql": "SELECT time_bucket('1 minute', timestamp) as time, COALESCE(AVG(oom_score), 0.0) as avg_oom, COALESCE(MAX(oom_score), 0.0) as max_oom FROM ml_predictions WHERE timestamp >= NOW() - INTERVAL '24 hours' AND oom_score > 0 GROUP BY time ORDER BY time",
+          "rawSql": "SELECT time_bucket('1 minute', timestamp) as time, COALESCE(AVG(oom_score), 0.0) as avg_oom, COALESCE(MAX(oom_score), 0.0) as max_oom FROM ml_predictions WHERE $__timeFilter(timestamp) AND oom_score > 0 GROUP BY time ORDER BY time",
           "refId": "A",
           "format": "time_series",
           "timeColumn": "time"
@@ -626,7 +626,7 @@
       },
       "targets": [
         {
-          "rawSql": "SELECT time_bucket('1 minute', timestamp) as time, COALESCE(AVG(crash_loop_score), 0.0) as avg_crash, COALESCE(MAX(crash_loop_score), 0.0) as max_crash FROM ml_predictions WHERE timestamp >= NOW() - INTERVAL '24 hours' AND crash_loop_score > 0 GROUP BY time ORDER BY time",
+          "rawSql": "SELECT time_bucket('1 minute', timestamp) as time, COALESCE(AVG(crash_loop_score), 0.0) as avg_crash, COALESCE(MAX(crash_loop_score), 0.0) as max_crash FROM ml_predictions WHERE $__timeFilter(timestamp) AND crash_loop_score > 0 GROUP BY time ORDER BY time",
           "refId": "A",
           "format": "time_series",
           "timeColumn": "time"
@@ -667,7 +667,7 @@
       },
       "targets": [
         {
-          "rawSql": "SELECT time_bucket('1 minute', timestamp) as time, COALESCE(AVG(high_cpu_score), 0.0) as avg_cpu, COALESCE(MAX(high_cpu_score), 0.0) as max_cpu FROM ml_predictions WHERE timestamp >= NOW() - INTERVAL '24 hours' AND high_cpu_score > 0 GROUP BY time ORDER BY time",
+          "rawSql": "SELECT time_bucket('1 minute', timestamp) as time, COALESCE(AVG(high_cpu_score), 0.0) as avg_cpu, COALESCE(MAX(high_cpu_score), 0.0) as max_cpu FROM ml_predictions WHERE $__timeFilter(timestamp) AND high_cpu_score > 0 GROUP BY time ORDER BY time",
           "refId": "A",
           "format": "time_series",
           "timeColumn": "time"
@@ -708,7 +708,7 @@
       },
       "targets": [
         {
-          "rawSql": "SELECT time_bucket('1 minute', timestamp) as time, COALESCE(AVG(network_error_score), 0.0) as avg_net, COALESCE(MAX(network_error_score), 0.0) as max_net FROM ml_predictions WHERE timestamp >= NOW() - INTERVAL '24 hours' AND network_error_score > 0 GROUP BY time ORDER BY time",
+          "rawSql": "SELECT time_bucket('1 minute', timestamp) as time, COALESCE(AVG(network_error_score), 0.0) as avg_net, COALESCE(MAX(network_error_score), 0.0) as max_net FROM ml_predictions WHERE $__timeFilter(timestamp) AND network_error_score > 0 GROUP BY time ORDER BY time",
           "refId": "A",
           "format": "time_series",
           "timeColumn": "time"
@@ -749,7 +749,7 @@
       },
       "targets": [
         {
-          "rawSql": "SELECT anomaly_type as value FROM ml_predictions WHERE timestamp >= NOW() - INTERVAL '24 hours' AND is_anomaly = 1 GROUP BY anomaly_type ORDER BY COUNT(*) DESC LIMIT 1",
+          "rawSql": "SELECT anomaly_type as value FROM ml_predictions WHERE $__timeFilter(timestamp) AND is_anomaly = 1 GROUP BY anomaly_type ORDER BY COUNT(*) DESC LIMIT 1",
           "refId": "A",
           "format": "table"
         }
@@ -800,7 +800,7 @@
       },
       "targets": [
         {
-          "rawSql": "SELECT COALESCE(AVG(confidence), 0.0) * 100 as value FROM ml_predictions WHERE timestamp >= NOW() - INTERVAL '24 hours' AND is_anomaly = 1",
+          "rawSql": "SELECT COALESCE(AVG(confidence), 0.0) * 100 as value FROM ml_predictions WHERE $__timeFilter(timestamp) AND is_anomaly = 1",
           "refId": "A",
           "format": "table"
         }
@@ -851,7 +851,7 @@
       },
       "targets": [
         {
-          "rawSql": "SELECT COALESCE(MAX(confidence), 0.0) * 100 as value FROM ml_predictions WHERE timestamp >= NOW() - INTERVAL '24 hours' AND is_anomaly = 1",
+          "rawSql": "SELECT COALESCE(MAX(confidence), 0.0) * 100 as value FROM ml_predictions WHERE $__timeFilter(timestamp) AND is_anomaly = 1",
           "refId": "A",
           "format": "table"
         }
@@ -902,7 +902,7 @@
       },
       "targets": [
         {
-          "rawSql": "SELECT COALESCE(AVG(cnt), 0.0) as value FROM (SELECT pod_name, COALESCE(COUNT(*), 0) as cnt FROM ml_predictions WHERE timestamp >= NOW() - INTERVAL '24 hours' AND is_anomaly = 1 GROUP BY pod_name) subq",
+          "rawSql": "SELECT COALESCE(AVG(cnt), 0.0) as value FROM (SELECT pod_name, COALESCE(COUNT(*), 0) as cnt FROM ml_predictions WHERE $__timeFilter(timestamp) AND is_anomaly = 1 GROUP BY pod_name) subq",
           "refId": "A",
           "format": "table"
         }
@@ -953,7 +953,7 @@
       },
       "targets": [
         {
-          "rawSql": "SELECT COALESCE(COUNT(DISTINCT pod_name), 0) as value FROM ml_predictions WHERE timestamp >= NOW() - INTERVAL '24 hours' AND is_anomaly = 1",
+          "rawSql": "SELECT COALESCE(COUNT(DISTINCT pod_name), 0) as value FROM ml_predictions WHERE $__timeFilter(timestamp) AND is_anomaly = 1",
           "refId": "A",
           "format": "table"
         }
@@ -1004,7 +1004,7 @@
       },
       "targets": [
         {
-          "rawSql": "SELECT COALESCE(COUNT(*), 0) as value FROM ml_predictions p WHERE p.timestamp >= NOW() - INTERVAL '24 hours' AND p.is_anomaly = 1 AND EXISTS (SELECT 1 FROM remediations r WHERE r.pod_name = p.pod_name AND r.namespace = p.namespace AND r.executed_at > p.timestamp)",
+          "rawSql": "SELECT COALESCE(COUNT(*), 0) as value FROM ml_predictions p WHERE $__timeFilter(p.timestamp) AND p.namespace NOT IN ('kube-system', 'kube-public', 'kube-node-lease', 'local-path-storage') AND p.is_anomaly = 1 AND EXISTS (SELECT 1 FROM remediations r WHERE r.pod_name = p.pod_name AND r.namespace = p.namespace AND r.executed_at > p.timestamp)",
           "refId": "A",
           "format": "table"
         }

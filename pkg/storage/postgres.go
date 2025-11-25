@@ -1585,13 +1585,15 @@ func (p *PostgresDB) GetRecentWarnings(ctx context.Context, limit int) ([]*metri
 		var w metrics.EarlyWarning
 		var warningID string
 		var timeToAnomalySeconds sql.NullInt64
+		var confidence sql.NullFloat64
+		var recommendedAction sql.NullString
 		var predictedMetricsJSON []byte
 		var expiresAt sql.NullTime
 		var acknowledged sql.NullBool
 
 		err := rows.Scan(
 			&warningID, &w.PodName, &w.Namespace, &w.WarningType, &w.Severity, &w.RiskScore,
-			&timeToAnomalySeconds, &w.Confidence, &w.RecommendedAction,
+			&timeToAnomalySeconds, &confidence, &recommendedAction,
 			&predictedMetricsJSON, &w.CreatedAt, &expiresAt, &acknowledged,
 		)
 		if err != nil {
@@ -1600,6 +1602,18 @@ func (p *PostgresDB) GetRecentWarnings(ctx context.Context, limit int) ([]*metri
 
 		if timeToAnomalySeconds.Valid {
 			w.TimeToAnomaly = time.Duration(timeToAnomalySeconds.Int64) * time.Second
+		}
+
+		if confidence.Valid {
+			w.Confidence = confidence.Float64
+		} else {
+			w.Confidence = 0.5 // Default confidence when NULL
+		}
+
+		if recommendedAction.Valid {
+			w.RecommendedAction = recommendedAction.String
+		} else {
+			w.RecommendedAction = "monitor" // Default action when NULL
 		}
 
 		if len(predictedMetricsJSON) > 0 {
@@ -1662,13 +1676,15 @@ func (p *PostgresDB) GetWarningsByPod(ctx context.Context, podName, namespace st
 		var w metrics.EarlyWarning
 		var warningID string
 		var timeToAnomalySeconds sql.NullInt64
+		var confidence sql.NullFloat64
+		var recommendedAction sql.NullString
 		var predictedMetricsJSON []byte
 		var expiresAt sql.NullTime
 		var acknowledged sql.NullBool
 
 		err := rows.Scan(
 			&warningID, &w.PodName, &w.Namespace, &w.WarningType, &w.Severity, &w.RiskScore,
-			&timeToAnomalySeconds, &w.Confidence, &w.RecommendedAction,
+			&timeToAnomalySeconds, &confidence, &recommendedAction,
 			&predictedMetricsJSON, &w.CreatedAt, &expiresAt, &acknowledged,
 		)
 		if err != nil {
@@ -1677,6 +1693,18 @@ func (p *PostgresDB) GetWarningsByPod(ctx context.Context, podName, namespace st
 
 		if timeToAnomalySeconds.Valid {
 			w.TimeToAnomaly = time.Duration(timeToAnomalySeconds.Int64) * time.Second
+		}
+
+		if confidence.Valid {
+			w.Confidence = confidence.Float64
+		} else {
+			w.Confidence = 0.5 // Default confidence when NULL
+		}
+
+		if recommendedAction.Valid {
+			w.RecommendedAction = recommendedAction.String
+		} else {
+			w.RecommendedAction = "monitor" // Default action when NULL
 		}
 
 		if len(predictedMetricsJSON) > 0 {

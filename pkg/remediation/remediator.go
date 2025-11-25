@@ -307,8 +307,20 @@ func (r *Remediator) processIssue(ctx context.Context, issue *metrics.Issue) err
 
 	pod, err := r.k8sClient.GetPod(ctx, issue.Namespace, issue.PodName)
 	if err != nil {
-		utils.Log.WithError(err).Warn("⚠️  Pod not found, marking issue as resolved")
-		return r.markIssueResolved(ctx, issue, "pod_not_found", "Pod no longer exists", true, 0)
+		// Check if it's a "not found" error vs other errors
+		if strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "NotFound") {
+			utils.Log.WithError(err).WithFields(map[string]interface{}{
+				"pod":       issue.PodName,
+				"namespace": issue.Namespace,
+			}).Warn("⚠️  Pod not found, marking issue as resolved")
+			return r.markIssueResolved(ctx, issue, "pod_not_found", fmt.Sprintf("Pod %s/%s no longer exists", issue.Namespace, issue.PodName), true, 0)
+		}
+		// For other errors (network, timeout, etc.), log and retry later
+		utils.Log.WithError(err).WithFields(map[string]interface{}{
+			"pod":       issue.PodName,
+			"namespace": issue.Namespace,
+		}).Error("❌ Failed to get pod (will retry later)")
+		return fmt.Errorf("failed to get pod: %w", err)
 	}
 
 	issueContext := r.gatherContext(ctx, issue, pod)

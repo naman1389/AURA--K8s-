@@ -16,11 +16,24 @@ from typing import Optional, Tuple, Dict, Any, List, TYPE_CHECKING
 if TYPE_CHECKING:
     from psycopg2.extensions import connection
 
+# Add scripts directory to path for imports
+from pathlib import Path
+scripts_dir = Path(__file__).parent
+if str(scripts_dir) not in sys.path:
+    sys.path.insert(0, str(scripts_dir))
+
 # Configuration - read from environment with fallback to localhost
-DB_URL: str = os.getenv("DATABASE_URL", "postgresql://aura:aura_password@localhost:5432/aura_metrics")
-ML_SERVICE_URL: str = os.getenv("ML_SERVICE_URL", "http://localhost:8001")
-GRAFANA_URL: str = os.getenv("GRAFANA_URL", "http://localhost:3000")
-MCP_SERVER_URL: str = os.getenv("MCP_SERVER_URL", "http://localhost:8000")
+try:
+    from config_helper import get_database_url, get_service_url
+    DB_URL: str = get_database_url()
+    ML_SERVICE_URL: str = get_service_url("ML_SERVICE", "8001")
+    GRAFANA_URL: str = get_service_url("GRAFANA", "3000")
+    MCP_SERVER_URL: str = get_service_url("MCP_SERVER", "8000")
+except ImportError:
+    DB_URL: str = os.getenv("DATABASE_URL", "postgresql://aura:aura_password@localhost:5432/aura_metrics")
+    ML_SERVICE_URL: str = os.getenv("ML_SERVICE_URL", "http://localhost:8001")
+    GRAFANA_URL: str = os.getenv("GRAFANA_URL", "http://localhost:3000")
+    MCP_SERVER_URL: str = os.getenv("MCP_SERVER_URL", "http://localhost:8000")
 
 print(f"\n📡 Using endpoints:")
 print(f"   DB: {DB_URL.split('@')[1] if '@' in DB_URL else DB_URL}")

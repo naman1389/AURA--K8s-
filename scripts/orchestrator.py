@@ -1064,18 +1064,22 @@ def generate_predictions(conn: "connection", ml_service_url: str) -> int:
 
                         # Override ML prediction if metrics indicate crash loop, OOM, or other critical issues
                         # This ensures we detect issues even if ML model doesn't
-                        if has_crash:
+                        if has_crash or (restarts and restarts > 3):
                             predicted_issue = 'crash_loop'
                             confidence = 0.95  # High confidence for direct metric detection
-                            logger.info(f"      Overriding ML prediction for {pod_name}: crash loop detected in metrics")
+                            logger.info(f"      Overriding ML prediction for {pod_name}: crash loop detected (restarts: {restarts})")
                         elif has_oom:
                             predicted_issue = 'OOMKilled'
                             confidence = 0.95
                             logger.info(f"      Overriding ML prediction for {pod_name}: OOM kill detected in metrics")
-                        elif has_high_cpu and cpu_util and cpu_util > 80:
+                        elif mem_util and mem_util > 70:
+                            predicted_issue = 'high_memory'
+                            confidence = max(confidence, 0.90)
+                            logger.info(f"      Overriding ML prediction for {pod_name}: high memory detected ({mem_util:.1f}%)")
+                        elif has_high_cpu or (cpu_util and cpu_util > 50):
                             predicted_issue = 'high_cpu'
                             confidence = max(confidence, 0.85)
-                            logger.info(f"      Overriding ML prediction for {pod_name}: high CPU detected in metrics")
+                            logger.info(f"      Overriding ML prediction for {pod_name}: high CPU detected ({cpu_util:.1f}%)")
                         elif has_network:
                             predicted_issue = 'NetworkErrors'
                             confidence = max(confidence, 0.80)
@@ -1295,7 +1299,7 @@ def create_issues_from_predictions(conn: "connection") -> int:
                 AND mp.predicted_issue = i.issue_type
                 AND i.status IN ('Open', 'InProgress')
             WHERE mp.timestamp > NOW() - INTERVAL '1 hour'
-                AND mp.predicted_issue != 'healthy'
+                AND (mp.predicted_issue != 'healthy' OR mp.is_anomaly = 1)
                 AND mp.confidence > %s
                 AND i.id IS NULL
             ORDER BY mp.pod_name, mp.namespace, mp.predicted_issue, mp.timestamp DESC
@@ -1328,6 +1332,34 @@ def create_issues_from_predictions(conn: "connection") -> int:
 
             # Validate confidence
             confidence = max(0.0, min(1.0, float(confidence)))
+
+            # Override issue_type if it's 'healthy' but we have metric flags indicating an anomaly
+            # This handles cases where ML model returns 'healthy' but is_anomaly = 1
+            if issue_type == 'healthy':
+                if has_crash:
+                    issue_type = 'crash_loop'
+                    confidence = max(confidence, 0.95)
+                    logger.info(f"      Overriding 'healthy' issue type for {pod_name}: crash loop detected")
+                elif has_oom:
+                    issue_type = 'OOMKilled'
+                    confidence = max(confidence, 0.95)
+                    logger.info(f"      Overriding 'healthy' issue type for {pod_name}: OOM kill detected")
+                elif mem_util and mem_util > 70:
+                    issue_type = 'high_memory'
+                    confidence = max(confidence, 0.90)
+                    logger.info(f"      Overriding 'healthy' issue type for {pod_name}: high memory ({mem_util:.1f}%)")
+                elif has_high_cpu or (cpu_util and cpu_util > 50):
+                    issue_type = 'high_cpu'
+                    confidence = max(confidence, 0.85)
+                    logger.info(f"      Overriding 'healthy' issue type for {pod_name}: high CPU ({cpu_util:.1f}%)")
+                elif has_network:
+                    issue_type = 'NetworkErrors'
+                    confidence = max(confidence, 0.80)
+                    logger.info(f"      Overriding 'healthy' issue type for {pod_name}: network issues detected")
+                else:
+                    # If still 'healthy' with no metric flags, skip creating issue
+                    logger.debug(f"      Skipping issue creation for {pod_name}: predicted 'healthy' with no metric anomalies")
+                    continue
 
             # Determine severity based on confidence and issue flags
             if confidence > 0.9 or (has_oom or has_crash):
@@ -1425,13 +1457,13 @@ def create_issues_from_thresholds(conn: "connection") -> int:
                 AND i.created_at > NOW() - INTERVAL '1 hour'
             WHERE pm.timestamp > NOW() - INTERVAL '10 minutes'
                 AND i.id IS NULL
-                AND pm.namespace NOT IN ('kube-system', 'kube-public', 'kube-node-lease', 'local-path-storage', 'default')
+                AND pm.namespace NOT IN ('kube-system', 'kube-public', 'kube-node-lease', 'local-path-storage')
                 AND (
                     pm.cpu_utilization > 80 OR
-                    pm.memory_utilization > 85 OR
+                    pm.memory_utilization > 70 OR
                     pm.has_oom_kill = true OR
                     pm.has_crash_loop = true OR
-                    pm.restarts > 3
+                    pm.restarts > 2
                 )
             ORDER BY pm.pod_name, pm.namespace, pm.timestamp DESC
             LIMIT 20
@@ -1467,11 +1499,11 @@ def create_issues_from_thresholds(conn: "connection") -> int:
                 issue_type = "OOMKilled"
                 severity = "critical"
                 description_parts.append("Pod was killed due to out-of-memory condition")
-            elif mem_util and mem_util > 85:
+            elif mem_util and mem_util > 70:
                 issue_type = "high_memory"
                 severity = "high"
                 description_parts.append(f"Memory utilization: {mem_util:.1f}%")
-            elif cpu_util and cpu_util > 80:
+            elif cpu_util and cpu_util > 50:
                 issue_type = "high_cpu"
                 severity = "high"
                 description_parts.append(f"CPU utilization: {cpu_util:.1f}%")
@@ -1479,9 +1511,9 @@ def create_issues_from_thresholds(conn: "connection") -> int:
                 issue_type = "crash_loop"
                 severity = "critical"
                 description_parts.append("Pod is in crash loop")
-            elif restarts and restarts > 3:
+            elif restarts and restarts > 2:
                 issue_type = "frequent_restarts"
-                severity = "medium"
+                severity = "critical" if restarts > 5 else "medium"
                 description_parts.append(f"Pod restarted {restarts} times recently")
 
             if issue_type == "healthy":

@@ -109,7 +109,22 @@ func (c *Collector) CollectPodMetrics(ctx context.Context) error {
 		return fmt.Errorf("failed to list pods: %w", err)
 	}
 
-	utils.Log.Infof("Collecting metrics for %d pods", len(pods.Items))
+	// Filter out system namespaces - only collect user pods
+	systemNamespaces := map[string]bool{
+		"kube-system":        true,
+		"kube-public":        true,
+		"kube-node-lease":    true,
+		"local-path-storage": true,
+	}
+
+	var userPods []corev1.Pod
+	for _, pod := range pods.Items {
+		if !systemNamespaces[pod.Namespace] {
+			userPods = append(userPods, pod)
+		}
+	}
+
+	utils.Log.Infof("Collecting metrics for %d user pods (filtered from %d total pods)", len(userPods), len(pods.Items))
 
 	// Collect all metrics first, then save in batches for better performance
 	var metricsList []*PodMetrics
@@ -118,7 +133,7 @@ func (c *Collector) CollectPodMetrics(ctx context.Context) error {
 		batchSize = config.DefaultBatchSize
 	}
 
-	for _, pod := range pods.Items {
+	for _, pod := range userPods {
 		metrics, err := c.buildPodMetrics(ctx, &pod)
 		if err != nil {
 			utils.Log.WithError(err).WithField("pod", pod.Name).Warn("Failed to build metrics for pod")

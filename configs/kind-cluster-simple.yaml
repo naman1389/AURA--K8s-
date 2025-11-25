@@ -1,6 +1,6 @@
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
-name: aura-k8s-production
+name: aura-k8s-local
 
 # Simple 1-Node Cluster (for quick testing)
 nodes:
