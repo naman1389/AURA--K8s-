@@ -1560,6 +1560,51 @@ def main():
     print("="*70)
 
 
+def check_models_exist():
+    """Check if all required models exist"""
+    required_models = [
+        "ensemble_model.joblib",
+        "xgboost_model.joblib",
+        "random_forest_model.joblib",
+        "lightgbm_model.joblib",
+        "gradient_boosting_model.joblib",
+        "scaler.joblib",
+        "label_encoder.joblib",
+        "feature_names.json",
+        "anomaly_types.json",
+        "training_metadata.json"
+    ]
+    
+    missing = []
+    for model_file in required_models:
+        model_path = MODEL_DIR / model_file
+        if not model_path.exists():
+            missing.append(model_file)
+    
+    return len(missing) == 0, missing
+
 if __name__ == "__main__":
+    # Check if models already exist
+    models_exist, missing = check_models_exist()
+    
+    if models_exist:
+        print("="*70)
+        print("✅ All trained models found!")
+        print("="*70)
+        print("📦 Models are ready for use. Skipping training.")
+        print("   To retrain, delete models/ directory or set FORCE_RETRAIN=true")
+        print("="*70)
+        sys.exit(0)
+    
+    if missing:
+        print("="*70)
+        print("⚠️  Some models are missing:")
+        for m in missing:
+            print(f"   - {m}")
+        print("="*70)
+        print("🚀 Starting training to create missing models...")
+        print("="*70)
+        print()
+    
     main()
 

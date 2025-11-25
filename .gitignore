@@ -42,14 +42,36 @@ logs/
 .pids/
 *.pid
 
-# ML Models (keep structure, ignore binaries)
-ml/train/models/*.joblib
-ml/train/models/*.pkl
+# ML Models - Best Practice: Keep trained models for production
+# Models are essential for production and take time to train
+# 199MB total is acceptable for production models
+# Uncomment below if you want to exclude models (not recommended for production)
+# ml/train/models/*.joblib
+# ml/train/models/*.pkl
 
-# Datasets (too large for git, download separately)
-ml/train/datasets/
+# Keep model metadata and small files
+!ml/train/models/*.json
+!ml/train/models/training_metadata.json
+!ml/train/models/anomaly_types.json
+!ml/train/models/feature_names.json
+
+# Datasets - Best Practice: Keep structure, ignore large data files
+# Keep directory structure and metadata, but ignore actual data files
+ml/train/datasets/**/*.csv
+ml/train/datasets/**/*.json
+ml/train/datasets/**/*.zip
+ml/train/datasets/**/*.tar.gz
+ml/train/datasets/**/*.parquet
+ml/train/datasets/**/data/
+ml/train/datasets/**/NAB-master/data/
+ml/train/datasets/**/NAB-master/results/
+ml/train/datasets/**/NAB-master/scripts/*.ipynb
+ml/train/datasets/**/NAB-master/nab/detectors/*/data/
+
+# Jupyter notebooks (keep structure, ignore notebooks with outputs)
 *.ipynb
 *.ipynb_checkpoints
+!ml/train/datasets/**/.gitkeep
 
 # Database
 *.db
