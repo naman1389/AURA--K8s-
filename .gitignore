@@ -50,9 +50,15 @@ ml/train/models/*.pkl
 *.db
 *.sqlite3
 
-# Environment
+# Environment variables - comprehensive patterns
 .env
+.env.*
 .env.local
+.env.local.*
+*.env
+*.env.*
+.env*.bak
+.env*.backup
 config.env
 
 # OS
@@ -66,7 +72,4 @@ temp/
 
 # Docker volumes (if any)
 docker-data/
-.env.local
 venv
-.gitignore
-./.env.local
