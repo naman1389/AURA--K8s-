@@ -46,6 +46,11 @@ logs/
 ml/train/models/*.joblib
 ml/train/models/*.pkl
 
+# Datasets (too large for git, download separately)
+ml/train/datasets/
+*.ipynb
+*.ipynb_checkpoints
+
 # Database
 *.db
 *.sqlite3
