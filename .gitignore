@@ -43,13 +43,12 @@ logs/
 *.pid
 
 # ML Models - Best Practice: Keep trained models for production
+# Keep smaller models in git (<100MB each), exclude very large ones
 # Models are essential for production and take time to train
-# 199MB total is acceptable for production models
-# Uncomment below if you want to exclude models (not recommended for production)
-# ml/train/models/*.joblib
-# ml/train/models/*.pkl
+ml/train/models/ensemble_model.joblib  # Too large (133MB), can be reconstructed
 
-# Keep model metadata and small files
+# Keep smaller models and all metadata
+!ml/train/models/*.joblib
 !ml/train/models/*.json
 !ml/train/models/training_metadata.json
 !ml/train/models/anomaly_types.json
