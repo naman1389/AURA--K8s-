@@ -64,10 +64,17 @@ AURA K8s is an enterprise-ready Kubernetes monitoring and auto-remediation platf
 
 ### Prerequisites
 
-Install the following tools:
+**Required Tools:**
+- Docker & Docker Compose v2.0+
+- Go 1.21+
+- Python 3.11+
+- Kind (Kubernetes in Docker)
+- kubectl
+
+**Installation Commands:**
 
 ```bash
-# macOS
+# macOS (using Homebrew)
 brew install docker docker-compose go python@3.11 kind kubectl
 
 # Linux (Ubuntu/Debian)
@@ -77,7 +84,7 @@ curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
 chmod +x ./kind
 sudo mv ./kind /usr/local/bin/kind
 
-# Verify installations
+# Verify all installations
 docker --version
 docker-compose --version
 go version
@@ -91,34 +98,138 @@ kubectl version --client
 - **10GB free disk space**
 - **Docker Desktop** or **Docker Engine** running
 
-### Installation
+### Step-by-Step Installation
+
+**Method 1: One-Command Start (Recommended)**
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/namansh70747/AURA--K8s-.git
+cd AURA--K8s-
+
+# 2. Start everything (one command does it all!)
+./start.sh
+```
+
+**That's it!** The `start.sh` script automatically:
+1. ✅ **Validates prerequisites** - Checks if all required tools are installed
+2. ✅ **Creates Kind cluster** - Sets up local Kubernetes cluster (if not exists)
+3. ✅ **Installs metrics-server** - Enables Kubernetes metrics API
+4. ✅ **Starts TimescaleDB** - Launches PostgreSQL with TimescaleDB extension
+5. ✅ **Starts Grafana** - Launches monitoring dashboards
+6. ✅ **Initializes database** - Creates schema with 10 tables
+7. ✅ **Creates Python virtual environment** - Sets up `venv/` directory
+8. ✅ **Installs Python dependencies** - Installs all required packages
+9. ✅ **Builds Go binaries** - Compiles Collector and Remediator services
+10. ✅ **Trains ML models** - Trains models if they don't exist (skips if present)
+11. ✅ **Imports Grafana dashboards** - Sets up 8 pre-configured dashboards
+12. ✅ **Starts all services** - Launches all 6 core services:
+    - ML Service (port 8001)
+    - MCP Server (port 8000)
+    - Collector (port 9090)
+    - Remediator (port 9091)
+    - Orchestrator
+    - Predictive Orchestrator
+13. ✅ **Verifies health** - Checks all services are running correctly
+
+**Time**: 2-3 minutes (5-10 minutes first time, including model training)
+
+**Method 2: Manual Setup (Advanced)**
+
+If you prefer manual control:
 
 ```bash
 # 1. Clone repository
 git clone https://github.com/namansh70747/AURA--K8s-.git
 cd AURA--K8s-
 
-# 2. Install dependencies (optional - start.sh will do this automatically)
+# 2. Install Python dependencies
 make install
+# Or manually:
+python3 -m venv venv
+./venv/bin/pip install --upgrade pip
+./venv/bin/pip install -r ml/train/requirements.txt
+./venv/bin/pip install -r mcp/requirements.txt
+./venv/bin/pip install -r ml/serve/requirements.txt
 
-# 3. Build Go binaries (optional - start.sh will do this automatically)
+# 3. Build Go binaries
 make build
+# Or manually:
+go build -o bin/collector ./cmd/collector
+go build -o bin/remediator ./cmd/remediator
 
-# 4. Start everything with one command
+# 4. Start Docker services
+docker-compose up -d timescaledb
+
+# 5. Start all services
 ./start.sh
 ```
 
-**That's it!** The startup script will:
-- ✅ Validate prerequisites
-- ✅ Set up Kind cluster (if needed)
-- ✅ Install metrics-server for Kubernetes metrics
-- ✅ Start TimescaleDB and Grafana
-- ✅ Initialize database schema (10 tables)
-- ✅ Start all services (Collector, Remediator, ML Service, MCP Server, Orchestrators)
-- ✅ Verify service health
-- ✅ Verify Grafana dashboards (8 dashboards)
+### First-Time Startup Details
 
-**Time**: 2-3 minutes (5-10 minutes first time)
+On the **first run**, the script will:
+- Create Kind Kubernetes cluster (takes ~30-60 seconds)
+- Download Docker images for TimescaleDB and Grafana
+- Create Python virtual environment (`venv/`)
+- Install ~50 Python packages (takes ~2-3 minutes)
+- Build Go binaries (takes ~10-20 seconds)
+- Train ML models if missing (takes ~5-10 minutes, but models are preserved in git)
+- Import Grafana dashboards
+
+**Subsequent runs** are much faster (2-3 minutes) because:
+- Models are already trained and preserved in git
+- Docker images are cached
+- Python packages are already installed
+- Go binaries are rebuilt automatically
+
+### Verifying Startup
+
+After running `./start.sh`, verify everything is working:
+
+```bash
+# Check all services are healthy
+curl http://localhost:9090/health  # Collector
+curl http://localhost:9091/health  # Remediator
+curl http://localhost:8001/health  # ML Service
+curl http://localhost:8000/health  # MCP Server
+
+# Check Kubernetes cluster
+kubectl get pods -A
+
+# Check database
+docker exec aura-timescaledb psql -U aura -d aura_metrics -c "\dt"
+
+# Access Grafana
+open http://localhost:3000  # macOS
+# Login: admin / admin
+```
+
+### Troubleshooting Startup
+
+If startup fails, check:
+
+```bash
+# View startup logs
+tail -f logs/collector.log
+tail -f logs/remediator.log
+tail -f logs/ml-service.log
+
+# Check if ports are in use
+lsof -i :9090  # Collector
+lsof -i :9091  # Remediator
+lsof -i :8001  # ML Service
+lsof -i :8000  # MCP Server
+lsof -i :5432  # TimescaleDB
+lsof -i :3000  # Grafana
+
+# Check Docker services
+docker-compose ps
+docker-compose logs timescaledb
+
+# Check Kubernetes cluster
+kubectl cluster-info
+kubectl get nodes
+```
 
 ---
 
