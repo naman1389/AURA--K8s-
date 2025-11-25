@@ -22,7 +22,7 @@ AURA K8s is an enterprise-ready Kubernetes monitoring and auto-remediation platf
 - **💾 Time-Series Optimization**: TimescaleDB for efficient metrics storage and querying
 - **🧠 AI-Powered Insights**: Ollama integration for intelligent remediation recommendations
 - **☸️ Native K8s Integration**: Works seamlessly with any Kubernetes cluster
-- **📊 Real-Time Monitoring**: Ultra-fast 500ms collection intervals with streaming infrastructure
+- **📊 Real-Time Monitoring**: Metrics collection every 15 seconds with parallel processing
 - **💰 Cost Optimization**: Automatic resource rightsizing recommendations
 - **⚡ High Performance**: Sub-second latency with multi-level caching
 
@@ -49,14 +49,14 @@ AURA K8s is an enterprise-ready Kubernetes monitoring and auto-remediation platf
 
 ### Components
 
-- **Collector** (Go): Gathers pod/node metrics every 500ms with streaming infrastructure
+- **Collector** (Go): Gathers pod/node metrics every 15 seconds with parallel processing (20 workers)
 - **ML Service** (Python/FastAPI): Ensemble prediction engine with forecasting capabilities
-- **Predictive Orchestrator** (Python): Coordinates predictive detection and preventive actions
-- **Orchestrator** (Python): Coordinates the prediction pipeline
-- **Remediator** (Go): Executes remediation actions (reactive + preventive)
+- **Predictive Orchestrator** (Python): Coordinates predictive detection and preventive actions (5-second intervals)
+- **Orchestrator** (Python): Coordinates the prediction pipeline (30-second intervals)
+- **Remediator** (Go): Executes remediation actions (reactive + preventive, 10-second intervals)
 - **MCP Server** (Python/FastAPI): AI recommendation engine with Ollama
-- **TimescaleDB**: Optimized time-series database with continuous aggregates
-- **Grafana**: 5 pre-configured dashboards for comprehensive monitoring
+- **TimescaleDB**: Optimized time-series database with continuous aggregates and 7-day retention
+- **Grafana**: 8 pre-configured dashboards for comprehensive monitoring
 
 ---
 
@@ -86,14 +86,11 @@ That's it! The startup script will:
 - ✅ Validate prerequisites
 - ✅ Set up Kind cluster (if needed)
 - ✅ Install metrics-server for Kubernetes metrics
-- ✅ Deploy test pods for metrics collection
 - ✅ Start TimescaleDB and Grafana
-- ✅ Initialize database schema
-- ✅ Train ML models (first time only)
+- ✅ Initialize database schema (10 tables)
 - ✅ Start all services (Collector, Remediator, ML Service, MCP Server, Orchestrators)
-- ✅ Verify real pod metrics collection
-- ✅ Verify ML predictions with model accuracy
-- ✅ Verify Grafana dashboards
+- ✅ Verify service health
+- ✅ Verify Grafana dashboards (8 dashboards)
 
 **Time**: 2-3 minutes (5-10 minutes first time)
 
@@ -118,7 +115,7 @@ curl http://localhost:8000/health # MCP Server
 # View logs
 tail -f logs/collector.log
 tail -f logs/remediator.log
-tail -f logs/orchestrator.log
+tail -f logs/predictive-orchestrator.log
 ```
 
 ---
@@ -143,43 +140,29 @@ After startup, services are available at:
 
 ## 🤖 Machine Learning
 
-### Training Models
+### Model Training
 
-Models are automatically trained on first startup. To retrain manually:
+Models are automatically trained on first startup using `ml/train/beast_train.py`. The system uses:
 
-```bash
-cd ml/train
-python simple_train.py
-```
-
-This generates 10,000 synthetic samples and trains 4 ensemble models:
-- Random Forest (accuracy: ~95%)
-- XGBoost (accuracy: ~97%)
-- LightGBM (accuracy: ~96%)
-- Gradient Boosting (accuracy: ~96%)
+- **Random Forest** (accuracy: ~95%)
+- **XGBoost** (accuracy: ~97%)
+- **LightGBM** (accuracy: ~96%)
+- **Gradient Boosting** (accuracy: ~96%)
 
 ### Prediction Pipeline
 
 1. **Collector** gathers pod metrics every 15 seconds
-2. **Orchestrator** engineers 13 features from raw metrics
+2. **Orchestrator** engineers features from raw metrics
 3. **ML Service** runs ensemble prediction (majority vote)
 4. **Database** stores predictions with confidence scores
 5. **Issues** are created for anomalies above 50% confidence
 6. **Remediator** executes appropriate fixes
 
-### Feature Engineering (13 Features)
+### Feature Engineering
 
-Base metrics:
-- `cpu_usage`, `memory_usage`, `disk_usage`
-- `network_bytes_sec`, `error_rate`, `latency_ms`
-- `restart_count`, `age_minutes`
-
-Engineered features:
-- `cpu_memory_ratio` - Resource balance indicator
-- `resource_pressure` - Overall resource utilization
-- `error_latency_product` - Error-performance correlation
-- `network_per_cpu` - Network efficiency
-- `is_critical` - Boolean flag for critical conditions
+The system engineers 13+ features from raw metrics including:
+- Base metrics: CPU, memory, disk, network, errors, latency, restarts
+- Engineered features: resource ratios, pressure indicators, trend analysis
 
 ---
 
@@ -219,36 +202,45 @@ For complex issues, AURA consults Ollama (Llama 3.2) which:
 
 ```
 AURA--K8s-/
-├── aura-cli.py              # Unified CLI tool (NEW!)
-├── cmd/                      # Go applications
-│   ├── collector/            # Metrics collection service
-│   └── remediator/           # Remediation service
-├── pkg/                      # Go packages
-│   ├── k8s/                  # Kubernetes client
-│   ├── metrics/              # Metrics collection
-│   ├── ml/                   # ML client
-│   ├── remediation/          # Remediation engine
-│   ├── storage/              # Database interface
-│   └── utils/                # Common utilities
-├── ml/                       # Machine learning
-│   ├── train/                # Model training
-│   │   ├── simple_train.py   # Training script
-│   │   └── models/           # Trained model artifacts
-│   └── serve/                # Prediction service
-│       └── predictor.py      # FastAPI ensemble service
-├── mcp/                      # MCP server (AI recommendations)
-│   ├── server_ollama.py      # FastAPI + Ollama integration
-│   └── tools.py              # K8s utilities
-├── scripts/                  # Utilities
-│   ├── orchestrator.py       # ML pipeline coordinator
-│   ├── generate_test_data.py # Test data generator
-│   ├── validate_system.py    # System validator
-│   └── init-db-local.sql     # Database schema
-├── configs/                  # Configuration
+├── start.sh                    # Main startup script
+├── stop.sh                     # Shutdown script
+├── cmd/                        # Go applications
+│   ├── collector/              # Metrics collection service
+│   └── remediator/             # Remediation service
+├── pkg/                        # Go packages
+│   ├── k8s/                    # Kubernetes client
+│   ├── metrics/                # Metrics collection
+│   ├── ml/                     # ML client
+│   ├── remediation/            # Remediation engine
+│   ├── storage/                # Database interface
+│   └── utils/                  # Common utilities
+├── ml/                         # Machine learning
+│   ├── train/                  # Model training
+│   │   ├── beast_train.py      # Training script
+│   │   └── models/             # Trained model artifacts
+│   └── serve/                  # Prediction service
+│       ├── predictor.py        # FastAPI ensemble service
+│       └── forecaster.py       # Forecasting service
+├── mcp/                        # MCP server (AI recommendations)
+│   ├── server_ollama.py        # FastAPI + Ollama integration
+│   ├── tools.py                # K8s utilities
+│   ├── cost_calculator.py      # Cost optimization
+│   ├── remediation_planner.py  # Remediation planning
+│   ├── remediation_learner.py  # Learning from past actions
+│   └── safety_checker.py       # Safety validation
+├── scripts/                    # Utilities
+│   ├── orchestrator.py         # ML pipeline coordinator
+│   ├── predictive_orchestrator.py  # Predictive detection
+│   ├── validate_system.py      # System validator
+│   └── init-db-timescale.sql   # Database schema
+├── configs/                    # Configuration
 │   └── kind-cluster-simple.yaml
-├── docker-compose.yml        # TimescaleDB setup
-├── go.mod                    # Go dependencies
-└── README.md                 # This file
+├── grafana/                    # Grafana dashboards
+│   ├── dashboards/             # 8 pre-configured dashboards
+│   └── datasources/            # Data source configuration
+├── docker-compose.yml          # TimescaleDB & Grafana setup
+├── go.mod                      # Go dependencies
+└── README.md                   # This file
 ```
 
 ---
@@ -261,7 +253,7 @@ AURA--K8s-/
 
 ### Data & Storage
 - **PostgreSQL 15** - Relational database
-- **TimescaleDB 2.x** - Time-series optimization
+- **TimescaleDB 2.x** - Time-series optimization with hypertables
 
 ### Machine Learning
 - **scikit-learn** - Base ML framework
@@ -285,10 +277,10 @@ AURA--K8s-/
 
 ## 📊 Performance
 
-- **Metrics Collection**: 500ms intervals (ultra-fast)
+- **Metrics Collection**: 15-second intervals with parallel processing (20 workers)
 - **ML Predictions**: 30-second intervals
 - **Forecasting**: 5-second intervals (predictive mode)
-- **Remediation**: 30-second polling (reactive + preventive)
+- **Remediation**: 10-second polling (preventive), 30-second (reactive)
 - **Database Retention**: 7 days raw data, 30 days predictions
 - **ML Accuracy**: 96.7% average across ensemble
 - **Prediction Latency**: ~50-100ms per pod
@@ -299,84 +291,56 @@ AURA--K8s-/
 
 ## 🔮 Predictive Anomaly Detection
 
-AURA K8s now includes **predictive anomaly detection** capabilities that forecast anomalies before they occur:
+AURA K8s includes **predictive anomaly detection** capabilities that forecast anomalies before they occur:
 
 ### Features
 
-- **⏱️ Ultra-Fast Collection**: 500ms collection intervals with streaming infrastructure
-- **🔮 Forecasting Engine**: Multi-model ensemble forecasting (LSTM, Prophet, ARIMA)
+- **⏱️ Fast Collection**: 15-second collection intervals with parallel processing
+- **🔮 Forecasting Engine**: Trend-based forecasting with ML probability estimation
 - **⚠️ Early Warnings**: Risk scoring, severity classification, and time-to-anomaly estimation
 - **🛡️ Preventive Actions**: Proactive scaling, resource increases, load balancing
-- **📊 Real-Time Processing**: Sub-second latency with in-memory circular buffers
+- **📊 Real-Time Processing**: Sub-second latency with batch processing
 
 ### Usage
 
-```bash
-# Start predictive orchestrator
-python3 scripts/predictive_orchestrator.py
-
-# Verify system
-python3 scripts/verify_grafana.py
-```
+The predictive orchestrator runs automatically when you start the system with `./start.sh`. It:
+- Generates forecasts every 5 seconds
+- Detects future anomalies based on trends
+- Creates early warnings with time-to-anomaly estimates
+- Triggers preventive actions automatically
 
 ### Configuration
 
+Environment variables (in `.env.local`):
 ```bash
-# Enable predictive features
-export COLLECTION_INTERVAL=500ms
-export USE_STREAMING_COLLECTION=true
-export FORECAST_INTERVAL=5s
-export PREDICTION_HORIZON=900  # 15 minutes
-export ENABLE_PREVENTIVE_REMEDIATION=true
+COLLECTION_INTERVAL=15s
+USE_PARALLEL_COLLECTION=true
+FORECAST_INTERVAL=5s
+PREDICTION_HORIZON=300  # 5 minutes
+ENABLE_PREVENTIVE_REMEDIATION=true
+PREVENTIVE_REMEDIATION_INTERVAL=10s
 ```
-
-See [docs/PREDICTIVE_IMPLEMENTATION.md](docs/PREDICTIVE_IMPLEMENTATION.md) for complete documentation.
 
 ---
 
 ## 📊 Grafana Dashboards
 
-AURA K8s includes 5 pre-configured Grafana dashboards for comprehensive monitoring:
-
-### Dashboard Overview
+AURA K8s includes 8 pre-configured Grafana dashboards:
 
 1. **Main Overview** - System-wide health and metrics
-   - Overall health score
-   - Active issues count
-   - Remediation success rate
-   - Pod resource usage trends
-
-2. **AI Predictions** - ML model insights
-   - Prediction accuracy over time
-   - Anomaly type distribution
-   - Confidence score distribution
-   - Model performance metrics
-
-3. **Cost Optimization** - Resource efficiency
-   - Cost savings calculations
-   - Resource rightsizing recommendations
-   - Optimization opportunities
-   - Monthly savings projection
-
-4. **Remediation Tracking** - Auto-remediation monitoring
-   - Remediation actions timeline
-   - Success/failure rates
-   - Action type distribution
-   - Time to resolution metrics
-
-5. **Resource Analysis** - Deep resource monitoring
-   - CPU/Memory utilization heatmaps
-   - Network traffic analysis
-   - Disk usage trends
-   - Pod restart patterns
+2. **AI Predictions** - ML model insights and accuracy
+3. **Anomaly Detection** - Real-time anomaly monitoring
+4. **Performance** - Resource utilization and trends
+5. **Cost Optimization** - Resource efficiency and savings
+6. **Remediation Tracking** - Auto-remediation monitoring
+7. **Resource Analysis** - Deep resource monitoring
+8. **ML Model** - Model performance metrics
 
 ### Accessing Dashboards
 
 ```bash
 # Start system (includes Grafana)
-make start
-# or
-python3 aura-cli.py start
+./start.sh
 
 # Access Grafana
 open http://localhost:3000
@@ -385,49 +349,31 @@ open http://localhost:3000
 # Navigate to Dashboards → AURA K8s folder
 ```
 
-### Dashboard Features
-
-- 📊 **Real-time data** - Updates every 10 seconds
-- 🎨 **Pre-configured panels** - No setup needed
-- 📈 **Time-series visualizations** - Powered by TimescaleDB
-- 🔔 **Alert integration** - (Configure as needed)
-- 💾 **Data retention** - 7 days metrics, 30 days predictions
-
 ---
 
 ## 🧪 Testing
 
-### Run Validation
+### Deploy Test Pods
 
 ```bash
-python3 aura-cli.py validate
+# Deploy pods that will trigger remediation
+kubectl apply -f test-remediation-pod.yaml
+
+# Monitor predictions and warnings
+tail -f logs/predictive-orchestrator.log
 ```
 
-This tests:
-- Database connectivity and schema
-- ML service health and predictions
-- Service endpoints
-- Pipeline data flow
-
-### Test Pipeline
+### Verify System
 
 ```bash
-python3 aura-cli.py test
-```
+# Check all services
+curl http://localhost:9090/health  # Collector
+curl http://localhost:9091/health  # Remediator
+curl http://localhost:8001/health # ML Service
+curl http://localhost:8000/health # MCP Server
 
-Verifies complete flow: Metrics → Predictions → Issues → Remediation
-
-### Manual Testing
-
-```bash
-# Check metrics collection
-curl http://localhost:9090/health
-
-# View recent logs
-python3 aura-cli.py logs
-
-# Query database
-docker-compose exec timescaledb psql -U aura -d aura_metrics -c "
+# Check database
+docker exec aura-timescaledb psql -U aura -d aura_metrics -c "
   SELECT COUNT(*) FROM pod_metrics WHERE timestamp > NOW() - INTERVAL '1 hour';
 "
 ```
@@ -440,13 +386,11 @@ docker-compose exec timescaledb psql -U aura -d aura_metrics -c "
 
 ```bash
 # Check prerequisites
-python3 aura-cli.py validate
-
-# Clean up ports
-python3 aura-cli.py cleanup
+./start.sh  # Will validate prerequisites
 
 # Check logs
-python3 aura-cli.py logs
+tail -f logs/collector.log
+tail -f logs/remediator.log
 ```
 
 ### Database Connection Errors
@@ -455,8 +399,8 @@ python3 aura-cli.py logs
 # Restart TimescaleDB
 docker-compose restart timescaledb
 
-# Reinitialize schema
-docker-compose exec timescaledb psql -U aura -d aura_metrics -f /docker-entrypoint-initdb.d/init.sql
+# Check database
+docker exec aura-timescaledb psql -U aura -d aura_metrics -c "\dt"
 ```
 
 ### No Metrics Being Collected
@@ -465,9 +409,11 @@ docker-compose exec timescaledb psql -U aura -d aura_metrics -f /docker-entrypoi
 # Check Kind cluster
 kubectl get pods -A
 
+# Check metrics-server
+kubectl get deployment metrics-server -n kube-system
+
 # Check collector
 curl http://localhost:9090/health
-python3 aura-cli.py logs
 ```
 
 ### ML Service Not Responding
@@ -475,9 +421,6 @@ python3 aura-cli.py logs
 ```bash
 # Check if models exist
 ls -la ml/train/models/
-
-# Retrain models
-cd ml/train && python simple_train.py
 
 # Check service
 curl http://localhost:8001/health
